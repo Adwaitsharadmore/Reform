@@ -3,9 +3,10 @@ import type { PoseConfig } from "./config"
 export type RepState = "UP" | "DOWN" | "UNKNOWN";
 
 export function createRepCounter(config: PoseConfig) {
-  let state: RepState = "UP";
+  let state: RepState = "UNKNOWN";
   let downReached = false;
   let repCount = 0;
+  let initialized = false;
 
   // Support both old and new config structures
   const UP_THRESH = config.primaryAngle?.upThreshold ?? (config as any).upThreshold ?? 165;
@@ -16,6 +17,20 @@ export function createRepCounter(config: PoseConfig) {
     update(bodyAngle: number | null) {
       let repJustCounted = false;
       if (bodyAngle == null) return { repCount, state, repJustCounted };
+
+      // Initialize state based on first valid angle
+      if (!initialized) {
+        if (isElevation) {
+          state = bodyAngle >= UP_THRESH ? "UP" : bodyAngle <= DOWN_THRESH ? "DOWN" : "UNKNOWN";
+        } else {
+          state = bodyAngle > UP_THRESH ? "UP" : bodyAngle < DOWN_THRESH ? "DOWN" : "UNKNOWN";
+        }
+        // If starting in DOWN state, mark downReached so first rep can be counted
+        if (state === "DOWN") {
+          downReached = true;
+        }
+        initialized = true;
+      }
 
       if (isElevation) {
         // For elevation: higher value = up position, lower value = down position
@@ -52,9 +67,10 @@ export function createRepCounter(config: PoseConfig) {
       return { repCount, state };
     },
     reset() {
-      state = "UP";
+      state = "UNKNOWN";
       downReached = false;
       repCount = 0;
+      initialized = false;
     },
   };
 }

@@ -507,6 +507,21 @@ export function CameraArea() {
           conf = useRight ? rightConf : leftConf
           activeSideRef.current = useRight ? "right" : "left"
         }
+        
+        // If bodyAngle is null but we have at least one valid angle, use it
+        if (bodyAngle == null) {
+          if (leftAngle != null) {
+            bodyAngle = leftAngle
+            useRight = false
+            conf = leftConf
+            activeSideRef.current = "left"
+          } else if (rightAngle != null) {
+            bodyAngle = rightAngle
+            useRight = true
+            conf = rightConf
+            activeSideRef.current = "right"
+          }
+        }
       } else {
         // Standard single-side tracking
         useRight = rightConf >= leftConf

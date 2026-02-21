@@ -29,11 +29,19 @@ export function DemoVideo() {
   const [watchedTime, setWatchedTime] = useState(0)
   const [isMarkedWatched, setIsMarkedWatched] = useState(false)
   const [canMarkWatched, setCanMarkWatched] = useState(false)
+  const [origin, setOrigin] = useState("") // Set client-side only to avoid hydration mismatch
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
   const isWatched = demoWatched[currentExercise] || false
   const canSkip = process.env.NEXT_PUBLIC_DEMO_SKIP === "true"
+
+  // Set origin client-side only to avoid hydration mismatch
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setOrigin(window.location.origin)
+    }
+  }, [])
 
   // Check if demo is already watched
   useEffect(() => {
@@ -123,27 +131,14 @@ export function DemoVideo() {
           <iframe
             ref={iframeRef}
             className="h-full w-full"
-            src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
+            src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1${origin ? `&origin=${origin}` : ''}`}
             title={`${currentExercise} Demo Video`}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
           />
         </div>
 
-        {/* Progress indicator */}
-        {watchedTime > 0 && watchedTime < MIN_WATCH_TIME_SECONDS && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Watch time: {watchedTime}s / {MIN_WATCH_TIME_SECONDS}s</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full bg-primary transition-all duration-300"
-                style={{ width: `${Math.min((watchedTime / MIN_WATCH_TIME_SECONDS) * 100, 100)}%` }}
-              />
-            </div>
-          </div>
-        )}
+    
 
         {/* Mark as watched section */}
         <div className="flex items-center justify-between rounded-lg border p-4">
