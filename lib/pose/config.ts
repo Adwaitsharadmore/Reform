@@ -1,4 +1,4 @@
-import type { InjuryArea } from "../types"
+import type { InjuryArea, ExerciseType } from "../types"
 
 // MediaPipe Pose Landmark Indices
 export const LANDMARKS = {
@@ -18,34 +18,171 @@ export const LANDMARKS = {
   RIGHT_ANKLE: 28,
 } as const
 
-export interface PoseConfig {
+export interface AngleCheck {
   // Landmark indices for angle calculation (A -> B -> C)
   pointA: { left: number; right: number }
   pointB: { left: number; right: number } // The vertex of the angle
   pointC: { left: number; right: number }
-  // Thresholds for rep counting
-  upThreshold: number // Angle when considered "up" position
-  downThreshold: number // Angle when considered "down" position
-  // Scoring thresholds
+  label: string // Label for this angle check (e.g., "Knee angle", "Trunk lean")
+  // Validation thresholds
+  minAngle?: number // Minimum acceptable angle (for >= checks)
+  maxAngle?: number // Maximum acceptable angle (for <= checks)
+  // For rep counting
+  upThreshold?: number // Angle when considered "up" position
+  downThreshold?: number // Angle when considered "down" position
+}
+
+export interface PoseConfig {
+  // Primary angle check (used for rep counting)
+  primaryAngle: AngleCheck
+  // Additional angle checks for form validation
+  additionalAngles?: AngleCheck[]
+  // Scoring thresholds (based on primary angle)
   shallowAngle: number // Angle above which is considered shallow
   veryShallowAngle: number // Angle above which is very shallow
   // Feedback labels
   depthLabel: string
   alignmentLabel: string
+  // Additional check labels (beyond depth and alignment)
+  additionalLabels?: string[]
   // Confidence calculation landmarks
   confidencePoints: number[]
   // For exercises where both sides may move independently (e.g., shoulder raises)
   // If true, track both sides and use the one with more movement
   trackBothSides: boolean
+  // Rep time validation (in seconds)
+  minRepTime?: number
+  maxRepTime?: number
 }
 
-export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
-  Knee: {
-    pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
-    pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
-    pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
-    upThreshold: 165,
-    downThreshold: 100,
+// Exercise-specific pose configurations
+export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
+  Squat: {
+    primaryAngle: {
+      pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+      pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+      pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+      label: "Knee angle",
+      maxAngle: 115, // ≤115° for good depth
+      upThreshold: 165,
+      downThreshold: 100,
+    },
+    additionalAngles: [
+      {
+        pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
+        pointB: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+        pointC: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+        label: "Trunk lean",
+        maxAngle: 35, // ≤35°
+      },
+    ],
+    shallowAngle: 130,
+    veryShallowAngle: 140,
+    depthLabel: "Depth",
+    alignmentLabel: "Knee alignment",
+    additionalLabels: ["Trunk lean"],
+    confidencePoints: [LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE],
+    trackBothSides: false,
+    minRepTime: 1.5,
+    maxRepTime: 3.0,
+  },
+  "Hip Hinge": {
+    primaryAngle: {
+      pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
+      pointB: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+      pointC: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+      label: "Hip flexion",
+      minAngle: 70,
+      maxAngle: 90, // 70-90°
+      upThreshold: 170,
+      downThreshold: 120,
+    },
+    additionalAngles: [
+      {
+        pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+        pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+        pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+        label: "Knee angle",
+        minAngle: 150, // >150°
+      },
+    ],
+    shallowAngle: 150,
+    veryShallowAngle: 160,
+    depthLabel: "Hip flexion",
+    alignmentLabel: "Knee angle",
+    additionalLabels: ["Knee angle"],
+    confidencePoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE],
+    trackBothSides: false,
+  },
+  "Shoulder Press": {
+    primaryAngle: {
+      pointA: { left: LANDMARKS.LEFT_ELBOW, right: LANDMARKS.RIGHT_ELBOW },
+      pointB: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
+      pointC: { left: LANDMARKS.LEFT_WRIST, right: LANDMARKS.RIGHT_WRIST },
+      label: "Elbow extension",
+      minAngle: 165, // ≥165°
+      upThreshold: 160,
+      downThreshold: 90,
+    },
+    additionalAngles: [
+      {
+        pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
+        pointB: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+        pointC: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+        label: "Trunk lean",
+        maxAngle: 10, // ≤10°
+      },
+      {
+        pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+        pointB: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
+        pointC: { left: LANDMARKS.LEFT_WRIST, right: LANDMARKS.RIGHT_WRIST },
+        label: "Shoulder elevation",
+        minAngle: 150, // ≥150°
+      },
+    ],
+    shallowAngle: 140,
+    veryShallowAngle: 150,
+    depthLabel: "Elbow extension",
+    alignmentLabel: "Shoulder alignment",
+    additionalLabels: ["Trunk lean", "Shoulder elevation"],
+    confidencePoints: [LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_WRIST, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_WRIST],
+    trackBothSides: true,
+  },
+  "Calf Raise": {
+    primaryAngle: {
+      pointA: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+      pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+      pointC: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+      label: "Heel elevation",
+      upThreshold: 180,
+      downThreshold: 170,
+    },
+    additionalAngles: [
+      {
+        pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+        pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+        pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+        label: "Knee angle",
+        minAngle: 160, // >160°
+      },
+    ],
+    shallowAngle: 175,
+    veryShallowAngle: 178,
+    depthLabel: "Heel elevation",
+    alignmentLabel: "Knee angle",
+    additionalLabels: ["Knee angle"],
+    confidencePoints: [LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE],
+    trackBothSides: false,
+  },
+  Lunge: {
+    primaryAngle: {
+      pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+      pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+      pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+      label: "Knee angle",
+      upThreshold: 165,
+      downThreshold: 100,
+    },
     shallowAngle: 130,
     veryShallowAngle: 140,
     depthLabel: "Depth",
@@ -53,12 +190,36 @@ export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
     confidencePoints: [LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE],
     trackBothSides: false,
   },
+  "Shoulder Raise": {
+    primaryAngle: {
+      pointA: { left: LANDMARKS.LEFT_ELBOW, right: LANDMARKS.RIGHT_ELBOW },
+      pointB: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
+      pointC: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+      label: "Shoulder elevation",
+      upThreshold: 160,
+      downThreshold: 90,
+    },
+    shallowAngle: 140,
+    veryShallowAngle: 150,
+    depthLabel: "Range of motion",
+    alignmentLabel: "Shoulder alignment",
+    confidencePoints: [LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP],
+    trackBothSides: true,
+  },
+}
+
+// Legacy injury-area based configs (for backward compatibility)
+export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
+  Knee: EXERCISE_CONFIGS.Squat,
   Ankle: {
-    pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
-    pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
-    pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE }, // Track leg angle for ankle loading
-    upThreshold: 165,
-    downThreshold: 100,
+    primaryAngle: {
+      pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+      pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+      pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+      label: "Leg angle",
+      upThreshold: 165,
+      downThreshold: 100,
+    },
     shallowAngle: 130,
     veryShallowAngle: 140,
     depthLabel: "Range of motion",
@@ -66,38 +227,17 @@ export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
     confidencePoints: [LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE],
     trackBothSides: false,
   },
-  Hip: {
-    pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
-    pointB: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
-    pointC: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
-    upThreshold: 170,
-    downThreshold: 120,
-    shallowAngle: 150,
-    veryShallowAngle: 160,
-    depthLabel: "Hip depth",
-    alignmentLabel: "Hip alignment",
-    confidencePoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE],
-    trackBothSides: false,
-  },
-  Shoulder: {
-    pointA: { left: LANDMARKS.LEFT_ELBOW, right: LANDMARKS.RIGHT_ELBOW },
-    pointB: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
-    pointC: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
-    upThreshold: 160,
-    downThreshold: 90,
-    shallowAngle: 140,
-    veryShallowAngle: 150,
-    depthLabel: "Range of motion",
-    alignmentLabel: "Shoulder alignment",
-    confidencePoints: [LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP],
-    trackBothSides: true, // Track both shoulders and use the one with more movement
-  },
+  Hip: EXERCISE_CONFIGS["Hip Hinge"],
+  Shoulder: EXERCISE_CONFIGS["Shoulder Raise"],
   Back: {
-    pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
-    pointB: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
-    pointC: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
-    upThreshold: 170,
-    downThreshold: 130,
+    primaryAngle: {
+      pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
+      pointB: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+      pointC: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+      label: "Trunk angle",
+      upThreshold: 170,
+      downThreshold: 130,
+    },
     shallowAngle: 160,
     veryShallowAngle: 165,
     depthLabel: "Posture",
@@ -109,5 +249,9 @@ export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
 
 export function getPoseConfig(injuryArea: InjuryArea): PoseConfig {
   return POSE_CONFIGS[injuryArea]
+}
+
+export function getExerciseConfig(exercise: ExerciseType): PoseConfig {
+  return EXERCISE_CONFIGS[exercise]
 }
 

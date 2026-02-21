@@ -16,7 +16,7 @@ import {
   Plus,
 } from "lucide-react"
 import type { SessionMetrics } from "@/lib/types"
-import { getPoseConfig } from "@/lib/pose/config"
+import { getPoseConfig, getExerciseConfig } from "@/lib/pose/config"
 
 function simulateRep(
   metrics: SessionMetrics,
@@ -56,7 +56,9 @@ function simulateRep(
 
 export function CoachingPanel() {
   const { metrics, setMetrics, sessionActive, plan } = useAppState()
-  const poseConfig = getPoseConfig(plan.injuryArea)
+  // Use exercise-specific config if available, otherwise fall back to injury area
+  const exerciseConfig = getExerciseConfig(metrics.currentExercise)
+  const poseConfig = exerciseConfig || getPoseConfig(plan.injuryArea)
 
   function applySimulation(type: "good" | "shallow" | "fast" | "knee-cave") {
     const updates = simulateRep(metrics, type)
@@ -150,7 +152,7 @@ export function CoachingPanel() {
           <Separator />
 
           {/* Metrics */}
-          {plan.injuryArea === "Shoulder" && (metrics.leftBodyAngle != null || metrics.rightBodyAngle != null) ? (
+          {poseConfig.trackBothSides && (metrics.leftBodyAngle != null || metrics.rightBodyAngle != null) ? (
             // Show both shoulder angles separately for shoulder exercises
             <div className="grid grid-cols-4 gap-2">
               <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
@@ -187,7 +189,7 @@ export function CoachingPanel() {
             <div className="grid grid-cols-3 gap-3">
               <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
                 <Target className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">{plan.injuryArea} Angle</span>
+                <span className="text-xs text-muted-foreground">{poseConfig.primaryAngle.label || "Angle"}</span>
                 <span className="font-mono text-sm font-semibold text-foreground">
                   {metrics.bodyAngle}&deg;
                 </span>

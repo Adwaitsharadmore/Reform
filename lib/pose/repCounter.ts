@@ -7,8 +7,9 @@ export function createRepCounter(config: PoseConfig) {
   let downReached = false;
   let repCount = 0;
 
-  const UP_THRESH = config.upThreshold;
-  const DOWN_THRESH = config.downThreshold;
+  // Support both old and new config structures
+  const UP_THRESH = config.primaryAngle?.upThreshold ?? (config as any).upThreshold ?? 165;
+  const DOWN_THRESH = config.primaryAngle?.downThreshold ?? (config as any).downThreshold ?? 100;
 
   return {
     update(bodyAngle: number | null) {

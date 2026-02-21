@@ -19,7 +19,7 @@ import {
 import { createPoseLandmarker } from "@/lib/pose/poseEngine"
 import { angleABC } from "@/lib/pose/angles"
 import { createRepCounter } from "@/lib/pose/repCounter"
-import { getPoseConfig, LANDMARKS } from "@/lib/pose/config"
+import { getPoseConfig, getExerciseConfig, LANDMARKS } from "@/lib/pose/config"
 import { scoreRep } from "@/lib/pose/feedback"
 
 function clamp01(x: number) {
@@ -29,8 +29,9 @@ function clamp01(x: number) {
 export function CameraArea() {
   const { sessionActive, setSessionActive, metrics, setMetrics, plan } = useAppState()
   
-  // Get pose configuration based on user's injury area
-  const poseConfig = getPoseConfig(plan.injuryArea)
+  // Get pose configuration based on current exercise, fallback to injury area
+  const exerciseConfig = getExerciseConfig(metrics.currentExercise)
+  const poseConfig = exerciseConfig || getPoseConfig(plan.injuryArea)
 
   const [showSkeleton, setShowSkeleton] = useState(true)
   const [mirrorCamera, setMirrorCamera] = useState(false)
@@ -76,14 +77,15 @@ export function CameraArea() {
   // Store current pose config ref to avoid stale closures
   const poseConfigRef = useRef(poseConfig)
   
-  // Update pose config ref when plan changes
+  // Update pose config ref when exercise or plan changes
   useEffect(() => {
-    poseConfigRef.current = getPoseConfig(plan.injuryArea)
+    const exerciseConfig = getExerciseConfig(metrics.currentExercise)
+    poseConfigRef.current = exerciseConfig || getPoseConfig(plan.injuryArea)
     // Reinitialize rep counter with new config if it exists
     if (repCounterRef.current) {
       repCounterRef.current = createRepCounter(poseConfigRef.current)
     }
-  }, [plan.injuryArea])
+  }, [metrics.currentExercise, plan.injuryArea])
 
   // Keep sessionActiveRef in sync with sessionActive state
   useEffect(() => {
@@ -214,11 +216,12 @@ export function CameraArea() {
 
     // Draw connections based on current pose config
     const config = poseConfigRef.current
+    const primaryAngle = config.primaryAngle
     const connections = [
-      [config.pointA.left, config.pointB.left],
-      [config.pointB.left, config.pointC.left],
-      [config.pointA.right, config.pointB.right],
-      [config.pointB.right, config.pointC.right],
+      [primaryAngle.pointA.left, primaryAngle.pointB.left],
+      [primaryAngle.pointB.left, primaryAngle.pointC.left],
+      [primaryAngle.pointA.right, primaryAngle.pointB.right],
+      [primaryAngle.pointB.right, primaryAngle.pointC.right],
     ] as const
 
     for (const [a, b] of connections) {
@@ -232,36 +235,70 @@ export function CameraArea() {
     ctx.globalAlpha = 1
   }
 
-  function computeFeedback(bodyAngle: number | null, conf: number | null): { status: "Good form" | "Needs work" | "Watch form"; checks: { label: string; ok: boolean }[] } {
+  function computeFeedback(
+    bodyAngle: number | null, 
+    conf: number | null,
+    landmarks?: any[],
+    useRight?: boolean
+  ): { status: "Good form" | "Needs work" | "Watch form"; checks: { label: string; ok: boolean }[] } {
     const config = poseConfigRef.current
+    
     if (bodyAngle == null || conf == null || conf < 0.5) {
-      return {
-        status: "Watch form",
-        checks: [
-          { label: config.depthLabel, ok: false },
-          { label: "Control", ok: false },
-          { label: config.alignmentLabel, ok: false },
-        ],
+      const checks = [
+        { label: config.depthLabel, ok: false },
+        { label: "Control", ok: false },
+        { label: config.alignmentLabel, ok: false },
+      ]
+      if (config.additionalLabels) {
+        config.additionalLabels.forEach(label => checks.push({ label, ok: false }))
+      }
+      return { status: "Watch form", checks }
+    }
+
+    const checks: { label: string; ok: boolean }[] = []
+    let hasIssues = false
+
+    // Check primary angle (depth)
+    const primaryOk = bodyAngle <= config.shallowAngle
+    checks.push({ label: config.depthLabel, ok: primaryOk })
+    if (!primaryOk) hasIssues = true
+
+    // Check additional angles if available
+    if (config.additionalAngles && landmarks) {
+      for (let i = 0; i < config.additionalAngles.length; i++) {
+        const angleCheck = config.additionalAngles[i]
+        const label = config.additionalLabels?.[i] || angleCheck.label
+        
+        const pointA = useRight ? landmarks[angleCheck.pointA.right] : landmarks[angleCheck.pointA.left]
+        const pointB = useRight ? landmarks[angleCheck.pointB.right] : landmarks[angleCheck.pointB.left]
+        const pointC = useRight ? landmarks[angleCheck.pointC.right] : landmarks[angleCheck.pointC.left]
+        
+        const angle = angleABC(pointA, pointB, pointC)
+        let ok = true
+        
+        if (angle != null) {
+          if (angleCheck.minAngle !== undefined && angle < angleCheck.minAngle) ok = false
+          if (angleCheck.maxAngle !== undefined && angle > angleCheck.maxAngle) ok = false
+        } else {
+          ok = false
+        }
+        
+        checks.push({ label, ok })
+        if (!ok) hasIssues = true
       }
     }
-    if (bodyAngle > config.shallowAngle) {
-      return {
-        status: "Needs work",
-        checks: [
-          { label: config.depthLabel, ok: false },
-          { label: "Control", ok: true },
-          { label: config.alignmentLabel, ok: true },
-        ],
-      }
-    }
-    return {
-      status: "Good form",
-      checks: [
-        { label: config.depthLabel, ok: true },
-        { label: "Control", ok: true },
-        { label: config.alignmentLabel, ok: true },
-      ],
-    }
+
+    // Always include alignment check (using primary angle alignment)
+    checks.push({ label: config.alignmentLabel, ok: true }) // Simplified for now
+
+    // Control check (would need rep time tracking)
+    checks.push({ label: "Control", ok: true }) // Simplified for now
+
+    const status = hasIssues || bodyAngle > config.shallowAngle 
+      ? "Needs work" 
+      : "Good form"
+    
+    return { status, checks }
   }
 
   async function startPoseLoop() {
@@ -307,6 +344,14 @@ export function CameraArea() {
       if (!landmarks || !repCounterRef.current) {
         console.log("No landmarks this frame or rep counter not initialized")
         const config = poseConfigRef.current
+        const checks = [
+          { label: config.depthLabel, ok: false },
+          { label: "Control", ok: false },
+          { label: config.alignmentLabel, ok: false },
+        ]
+        if (config.additionalLabels) {
+          config.additionalLabels.forEach(label => checks.push({ label, ok: false }))
+        }
         // Update debug info separately (not inside setMetrics to avoid React error)
         setDebugInfo({
           landmarksPresent: false,
@@ -322,11 +367,7 @@ export function CameraArea() {
           poseConfidence: 0,
           feedback: {
             status: "Watch form",
-            checks: [
-              { label: config.depthLabel, ok: false },
-              { label: "Control", ok: false },
-              { label: config.alignmentLabel, ok: false },
-            ],
+            checks,
           },
         }))
         const ctx = canvas.getContext("2d")
@@ -357,15 +398,15 @@ export function CameraArea() {
       let rightAngle: number | null = null
       
       if (config.trackBothSides) {
-        // Calculate angles for both sides
-        const leftPointA = landmarks[config.pointA.left]
-        const leftPointB = landmarks[config.pointB.left]
-        const leftPointC = landmarks[config.pointC.left]
+        // Calculate angles for both sides using primary angle
+        const leftPointA = landmarks[config.primaryAngle.pointA.left]
+        const leftPointB = landmarks[config.primaryAngle.pointB.left]
+        const leftPointC = landmarks[config.primaryAngle.pointC.left]
         const leftRawAngle = angleABC(leftPointA, leftPointB, leftPointC)
 
-        const rightPointA = landmarks[config.pointA.right]
-        const rightPointB = landmarks[config.pointB.right]
-        const rightPointC = landmarks[config.pointC.right]
+        const rightPointA = landmarks[config.primaryAngle.pointA.right]
+        const rightPointB = landmarks[config.primaryAngle.pointB.right]
+        const rightPointC = landmarks[config.primaryAngle.pointC.right]
         const rightRawAngle = angleABC(rightPointA, rightPointB, rightPointC)
 
         // Smooth both angles
@@ -411,9 +452,9 @@ export function CameraArea() {
       } else {
         // Standard single-side tracking
         useRight = rightConf >= leftConf
-        const pointA = useRight ? landmarks[config.pointA.right] : landmarks[config.pointA.left]
-        const pointB = useRight ? landmarks[config.pointB.right] : landmarks[config.pointB.left]
-        const pointC = useRight ? landmarks[config.pointC.right] : landmarks[config.pointC.left]
+        const pointA = useRight ? landmarks[config.primaryAngle.pointA.right] : landmarks[config.primaryAngle.pointA.left]
+        const pointB = useRight ? landmarks[config.primaryAngle.pointB.right] : landmarks[config.primaryAngle.pointB.left]
+        const pointC = useRight ? landmarks[config.primaryAngle.pointC.right] : landmarks[config.primaryAngle.pointC.left]
         conf = useRight ? rightConf : leftConf
 
         const rawAngle = angleABC(pointA, pointB, pointC)
@@ -457,7 +498,7 @@ export function CameraArea() {
         lastDownTsRef.current = null
       }
 
-      const feedback = computeFeedback(bodyAngle, conf)
+      const feedback = computeFeedback(bodyAngle, conf, landmarks, useRight)
 
       // Draw skeleton overlay
       drawSkeleton(landmarks, w, h)

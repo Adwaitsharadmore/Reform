@@ -19,7 +19,7 @@ import {
 import { Plus, Trash2 } from "lucide-react"
 
 const INJURY_AREAS: InjuryArea[] = ["Knee", "Shoulder", "Back", "Ankle", "Hip"]
-const EXERCISES: ExerciseType[] = ["Squat", "Lunge", "Shoulder Raise"]
+const EXERCISES: ExerciseType[] = ["Squat", "Lunge", "Shoulder Raise", "Hip Hinge", "Shoulder Press", "Calf Raise"]
 const TEMPOS: Tempo[] = ["Slow", "Normal", "Fast"]
 const DAYS: DayOfWeek[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 

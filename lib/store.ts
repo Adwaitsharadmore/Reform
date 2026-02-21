@@ -8,7 +8,9 @@ export const DEFAULT_PLAN: Plan = {
   injuryArea: "Knee", // Default, but will be overridden by user input
   exercises: [
     { exercise: "Squat", sets: 3, reps: 10, tempo: "Normal", notes: "" },
-    { exercise: "Lunge", sets: 2, reps: 12, tempo: "Slow", notes: "Keep torso upright" },
+    { exercise: "Hip Hinge", sets: 2, reps: 12, tempo: "Slow", notes: "Keep knees straight" },
+    { exercise: "Shoulder Press", sets: 3, reps: 8, tempo: "Normal", notes: "Keep trunk upright" },
+    { exercise: "Calf Raise", sets: 3, reps: 15, tempo: "Normal", notes: "" },
   ],
   daysPerWeek: 3,
   preferredDays: ["Mon", "Wed", "Fri"],

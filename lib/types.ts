@@ -1,5 +1,5 @@
 export type InjuryArea = "Knee" | "Shoulder" | "Back" | "Ankle" | "Hip"
-export type ExerciseType = "Squat" | "Lunge" | "Shoulder Raise"
+export type ExerciseType = "Squat" | "Lunge" | "Shoulder Raise" | "Hip Hinge" | "Shoulder Press" | "Calf Raise"
 export type Tempo = "Slow" | "Normal" | "Fast"
 export type DayOfWeek = "Mon" | "Tue" | "Wed" | "Thu" | "Fri" | "Sat" | "Sun"
 
