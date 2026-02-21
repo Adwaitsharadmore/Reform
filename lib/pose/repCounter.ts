@@ -10,22 +10,40 @@ export function createRepCounter(config: PoseConfig) {
   // Support both old and new config structures
   const UP_THRESH = config.primaryAngle?.upThreshold ?? (config as any).upThreshold ?? 165;
   const DOWN_THRESH = config.primaryAngle?.downThreshold ?? (config as any).downThreshold ?? 100;
+  const isElevation = config.measurementType === 'elevation';
 
   return {
     update(bodyAngle: number | null) {
       let repJustCounted = false;
       if (bodyAngle == null) return { repCount, state, repJustCounted };
 
-      if (bodyAngle > UP_THRESH) {
-        state = "UP";
-        if (downReached) {
-          repCount += 1;
-          repJustCounted = true;
-          downReached = false;
+      if (isElevation) {
+        // For elevation: higher value = up position, lower value = down position
+        // UP_THRESH = minimum elevation to be "up", DOWN_THRESH = maximum elevation to be "down"
+        if (bodyAngle >= UP_THRESH) {
+          state = "UP";
+          if (downReached) {
+            repCount += 1;
+            repJustCounted = true;
+            downReached = false;
+          }
+        } else if (bodyAngle <= DOWN_THRESH) {
+          state = "DOWN";
+          downReached = true;
         }
-      } else if (bodyAngle < DOWN_THRESH) {
-        state = "DOWN";
-        downReached = true;
+      } else {
+        // For angles: higher angle = up position, lower angle = down position
+        if (bodyAngle > UP_THRESH) {
+          state = "UP";
+          if (downReached) {
+            repCount += 1;
+            repJustCounted = true;
+            downReached = false;
+          }
+        } else if (bodyAngle < DOWN_THRESH) {
+          state = "DOWN";
+          downReached = true;
+        }
       }
 
       return { repCount, state, repJustCounted };

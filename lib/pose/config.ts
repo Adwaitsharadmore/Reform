@@ -39,9 +39,9 @@ export interface PoseConfig {
   primaryAngle: AngleCheck
   // Additional angle checks for form validation
   additionalAngles?: AngleCheck[]
-  // Scoring thresholds (based on primary angle)
-  shallowAngle: number // Angle above which is considered shallow
-  veryShallowAngle: number // Angle above which is very shallow
+  // Scoring thresholds (based on primary angle or elevation)
+  shallowAngle: number // Angle above which is considered shallow, or elevation below which is shallow
+  veryShallowAngle: number // Angle above which is very shallow, or elevation below which is very shallow
   // Feedback labels
   depthLabel: string
   alignmentLabel: string
@@ -55,6 +55,11 @@ export interface PoseConfig {
   // Rep time validation (in seconds)
   minRepTime?: number
   maxRepTime?: number
+  // Measurement type: 'angle' or 'elevation'
+  // If 'elevation', measures vertical distance from rest position instead of angle
+  measurementType?: 'angle' | 'elevation'
+  // For elevation-based exercises, landmark to track (ankle for calf raises)
+  elevationLandmark?: { left: number; right: number }
 }
 
 // Exercise-specific pose configurations
@@ -155,9 +160,12 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
       pointA: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
       pointB: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
       pointC: { left: LANDMARKS.LEFT_FOOT_INDEX, right: LANDMARKS.RIGHT_FOOT_INDEX },
-      label: "Ankle angle",
-      upThreshold: 180,
-      downThreshold: 170,
+      label: "Ankle elevation",
+      // For elevation: upThreshold = minimum elevation to be considered "up" (on toes)
+      // downThreshold = maximum elevation to be considered "down" (flat-footed)
+      // Values in normalized coordinates (0.02 = 2% of frame height)
+      upThreshold: 0.02, // Minimum elevation to count as "up" position
+      downThreshold: 0.005, // Maximum elevation to count as "down" position (rest)
     },
     additionalAngles: [
       {
@@ -168,13 +176,16 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
         minAngle: 160, // >160°
       },
     ],
-    shallowAngle: 175,
-    veryShallowAngle: 178,
+    // For elevation: shallowAngle = minimum good elevation, veryShallowAngle = minimum acceptable elevation
+    shallowAngle: 0.015, // Minimum elevation for good form (1.5% of frame height)
+    veryShallowAngle: 0.01, // Minimum elevation for acceptable form (1% of frame height)
     depthLabel: "Heel elevation",
     alignmentLabel: "Ankle alignment",
     additionalLabels: ["Knee angle"],
     confidencePoints: [LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.LEFT_FOOT_INDEX, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE, LANDMARKS.RIGHT_FOOT_INDEX],
     trackBothSides: false,
+    measurementType: 'elevation',
+    elevationLandmark: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
   },
   Lunge: {
     primaryAngle: {

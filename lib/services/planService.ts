@@ -1,4 +1,4 @@
-import { db } from "../store";
+import { db } from "../db";
 import { Plan } from "../types";
 
 export async function savePlan(plan: Plan) {

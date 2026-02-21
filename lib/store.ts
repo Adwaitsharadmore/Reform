@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react"
 import type { Plan, SessionMetrics, SessionResult } from "./types"
+import { db } from "./db"
 
 export const DEFAULT_PLAN: Plan = {
   name: "My PT Plan",
@@ -72,18 +73,5 @@ export function useAppState() {
   return ctx
 }
 
-
-export const db = {
-  plan: null as Plan | null,
-  session: {
-    id: null as string | null,
-    planId: null as string | null,
-    status: "idle" as "idle" | "running" | "paused" | "ended",
-    startedAt: 0,
-    repCount: 0,
-    lastRepScore: null as number | null,
-    scores: [] as number[],
-    lastMetrics: null as SessionMetrics | null,
-    result: null as SessionResult | null,
-  },
-};
+// Re-export db for client-side use
+export { db }

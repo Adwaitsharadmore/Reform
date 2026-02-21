@@ -30,9 +30,10 @@ import {
 export default function SummaryPage() {
   const { sessionResult } = useAppState()
 
-  function formatDuration(seconds: number) {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
+  function formatDuration(milliseconds: number) {
+    const totalSeconds = Math.floor(milliseconds / 1000)
+    const m = Math.floor(totalSeconds / 60)
+    const s = totalSeconds % 60
     return `${m}m ${s}s`
   }
 
@@ -47,10 +48,12 @@ export default function SummaryPage() {
       `Tip: ${sessionResult.mainTip}`,
       ``,
       `Exercises:`,
-      ...sessionResult.exercises.map(
-        (e) =>
-          `- ${e.exercise}: ${e.reps} reps, avg ${e.avgScore}/100 ${e.issues.length > 0 ? `(${e.issues.join(", ")})` : ""}`
-      ),
+      ...(sessionResult.exercises && sessionResult.exercises.length > 0
+        ? sessionResult.exercises.map(
+            (e) =>
+              `- ${e.exercise}: ${e.reps} reps, avg ${e.avgScore}/100 ${e.issues.length > 0 ? `(${e.issues.join(", ")})` : ""}`
+          )
+        : ["No exercise data available"]),
     ].join("\n")
 
     navigator.clipboard.writeText(text)
@@ -134,50 +137,56 @@ export default function SummaryPage() {
             <CardTitle className="text-base">Exercise Breakdown</CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Exercise</TableHead>
-                  <TableHead className="text-right">Reps</TableHead>
-                  <TableHead className="text-right">Avg Score</TableHead>
-                  <TableHead>Issues</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sessionResult.exercises.map((ex) => (
-                  <TableRow key={ex.exercise}>
-                    <TableCell className="font-medium">{ex.exercise}</TableCell>
-                    <TableCell className="text-right">{ex.reps}</TableCell>
-                    <TableCell className="text-right">
-                      <Badge
-                        variant={ex.avgScore >= 80 ? "default" : "secondary"}
-                      >
-                        {ex.avgScore}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {ex.issues.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {ex.issues.map((issue) => (
-                            <Badge
-                              key={issue}
-                              variant="outline"
-                              className="text-xs"
-                            >
-                              {issue}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          None
-                        </span>
-                      )}
-                    </TableCell>
+            {sessionResult.exercises && sessionResult.exercises.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Exercise</TableHead>
+                    <TableHead className="text-right">Reps</TableHead>
+                    <TableHead className="text-right">Avg Score</TableHead>
+                    <TableHead>Issues</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {sessionResult.exercises.map((ex) => (
+                    <TableRow key={ex.exercise}>
+                      <TableCell className="font-medium">{ex.exercise}</TableCell>
+                      <TableCell className="text-right">{ex.reps}</TableCell>
+                      <TableCell className="text-right">
+                        <Badge
+                          variant={ex.avgScore >= 80 ? "default" : "secondary"}
+                        >
+                          {ex.avgScore}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {ex.issues.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {ex.issues.map((issue) => (
+                              <Badge
+                                key={issue}
+                                variant="outline"
+                                className="text-xs"
+                              >
+                                {issue}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">
+                            None
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                No exercise breakdown available for this session.
+              </div>
+            )}
           </CardContent>
         </Card>
 

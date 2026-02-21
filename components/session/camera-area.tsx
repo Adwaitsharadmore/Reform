@@ -17,17 +17,18 @@ import {
 } from "@/components/ui/tooltip"
 
 import { createPoseLandmarker } from "@/lib/pose/poseEngine"
-import { angleABC } from "@/lib/pose/angles"
+import { angleABC, calculateElevation } from "@/lib/pose/angles"
 import { createRepCounter } from "@/lib/pose/repCounter"
 import { getPoseConfig, getExerciseConfig, LANDMARKS } from "@/lib/pose/config"
 import { scoreRep } from "@/lib/pose/feedback"
+import type { SessionMetrics } from "@/lib/types"
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x))
 }
 
 export function CameraArea() {
-  const { sessionActive, setSessionActive, metrics, setMetrics, plan } = useAppState()
+  const { sessionActive, setSessionActive, metrics, setMetrics, plan, setSessionResult } = useAppState()
   
   // Get pose configuration based on current exercise, fallback to injury area
   const exerciseConfig = getExerciseConfig(metrics.currentExercise)
@@ -61,6 +62,7 @@ export function CameraArea() {
   // Rep counter + rep scoring (will be initialized with config in handleStart)
   const repCounterRef = useRef<ReturnType<typeof createRepCounter> | null>(null)
   const repMinAngleRef = useRef<number>(999)
+  const repMaxElevationRef = useRef<number>(0) // For elevation-based exercises, track max elevation
   const lastDownTsRef = useRef<number | null>(null)
   const currentRepCountRef = useRef<number>(0)
 
@@ -73,6 +75,11 @@ export function CameraArea() {
   const leftAngleHistoryRef = useRef<number[]>([]) // Track angle history to determine movement range
   const rightAngleHistoryRef = useRef<number[]>([])
   const activeSideRef = useRef<"left" | "right" | null>(null) // Which side is currently being tracked
+  
+  // For elevation-based exercises (e.g., calf raises): track rest position
+  const restPositionRef = useRef<number | null>(null) // Baseline ankle Y position (normalized)
+  const restPositionSamplesRef = useRef<number[]>([]) // Samples to establish baseline
+  const elevationBufRef = useRef<number[]>([]) // Smoothing buffer for elevation
   
   // Store current pose config ref to avoid stale closures
   const poseConfigRef = useRef(poseConfig)
@@ -258,8 +265,16 @@ export function CameraArea() {
     const checks: { label: string; ok: boolean }[] = []
     let hasIssues = false
 
-    // Check primary angle (depth)
-    const primaryOk = bodyAngle <= config.shallowAngle
+    // Check primary angle/elevation (depth)
+    let primaryOk: boolean
+    if (config.measurementType === 'elevation') {
+      // For elevation: higher value = better (need to convert bodyAngle back to normalized)
+      const normalizedElevation = bodyAngle / 1000
+      primaryOk = normalizedElevation >= config.shallowAngle
+    } else {
+      // For angles: lower angle = deeper movement
+      primaryOk = bodyAngle <= config.shallowAngle
+    }
     checks.push({ label: config.depthLabel, ok: primaryOk })
     if (!primaryOk) hasIssues = true
 
@@ -294,9 +309,18 @@ export function CameraArea() {
     // Control check (would need rep time tracking)
     checks.push({ label: "Control", ok: true }) // Simplified for now
 
-    const status = hasIssues || bodyAngle > config.shallowAngle 
-      ? "Needs work" 
-      : "Good form"
+    // Determine status based on measurement type
+    let status: "Good form" | "Needs work" | "Watch form"
+    if (config.measurementType === 'elevation') {
+      const normalizedElevation = bodyAngle / 1000
+      status = hasIssues || normalizedElevation < config.shallowAngle 
+        ? "Needs work" 
+        : "Good form"
+    } else {
+      status = hasIssues || bodyAngle > config.shallowAngle 
+        ? "Needs work" 
+        : "Good form"
+    }
     
     return { status, checks }
   }
@@ -402,12 +426,18 @@ export function CameraArea() {
         const leftPointA = landmarks[config.primaryAngle.pointA.left]
         const leftPointB = landmarks[config.primaryAngle.pointB.left]
         const leftPointC = landmarks[config.primaryAngle.pointC.left]
-        const leftRawAngle = angleABC(leftPointA, leftPointB, leftPointC)
-
+        
         const rightPointA = landmarks[config.primaryAngle.pointA.right]
         const rightPointB = landmarks[config.primaryAngle.pointB.right]
         const rightPointC = landmarks[config.primaryAngle.pointC.right]
-        const rightRawAngle = angleABC(rightPointA, rightPointB, rightPointC)
+        
+        // Only calculate angle if all required landmarks are visible
+        const v = (p: any) => clamp01(p?.visibility ?? 0)
+        const leftAllVisible = v(leftPointA) >= 0.5 && v(leftPointB) >= 0.5 && v(leftPointC) >= 0.5
+        const rightAllVisible = v(rightPointA) >= 0.5 && v(rightPointB) >= 0.5 && v(rightPointC) >= 0.5
+        
+        const leftRawAngle = leftAllVisible ? angleABC(leftPointA, leftPointB, leftPointC) : null
+        const rightRawAngle = rightAllVisible ? angleABC(rightPointA, rightPointB, rightPointC) : null
 
         // Smooth both angles
         if (leftRawAngle != null) {
@@ -452,31 +482,87 @@ export function CameraArea() {
       } else {
         // Standard single-side tracking
         useRight = rightConf >= leftConf
-        const pointA = useRight ? landmarks[config.primaryAngle.pointA.right] : landmarks[config.primaryAngle.pointA.left]
-        const pointB = useRight ? landmarks[config.primaryAngle.pointB.right] : landmarks[config.primaryAngle.pointB.left]
-        const pointC = useRight ? landmarks[config.primaryAngle.pointC.right] : landmarks[config.primaryAngle.pointC.left]
         conf = useRight ? rightConf : leftConf
 
-        const rawAngle = angleABC(pointA, pointB, pointC)
-        bodyAngle = rawAngle
+        // Check if this exercise uses elevation measurement (e.g., calf raises)
+        if (config.measurementType === 'elevation' && config.elevationLandmark) {
+          const ankleLandmark = useRight ? landmarks[config.elevationLandmark.right] : landmarks[config.elevationLandmark.left]
+          const v = (p: any) => clamp01(p?.visibility ?? 0)
+          const ankleVisible = ankleLandmark && v(ankleLandmark) >= 0.5
 
-        // Smooth angle (moving average last 6 frames)
-        if (bodyAngle != null) {
-          const buf = angleBufRef.current
-          buf.push(bodyAngle)
-          if (buf.length > 6) buf.shift()
-          const avg = buf.reduce((a, b) => a + b, 0) / buf.length
-          bodyAngle = avg
+          if (ankleVisible) {
+            // Establish rest position (baseline) during first few seconds
+            if (restPositionRef.current === null) {
+              restPositionSamplesRef.current.push(ankleLandmark.y)
+              // Keep last 30 samples (about 1 second at 30fps)
+              if (restPositionSamplesRef.current.length > 30) {
+                restPositionSamplesRef.current.shift()
+              }
+              // After 30 samples, set rest position as the maximum Y (lowest point)
+              if (restPositionSamplesRef.current.length === 30) {
+                restPositionRef.current = Math.max(...restPositionSamplesRef.current)
+              }
+            } else {
+              // Calculate elevation from rest position
+              const rawElevation = calculateElevation(ankleLandmark, restPositionRef.current)
+              
+              if (rawElevation != null) {
+                // Smooth elevation (moving average last 6 frames)
+                elevationBufRef.current.push(rawElevation)
+                if (elevationBufRef.current.length > 6) elevationBufRef.current.shift()
+                const avgElevation = elevationBufRef.current.reduce((a, b) => a + b, 0) / elevationBufRef.current.length
+                // Convert elevation to a value that can be used like angle (multiply by 1000 for better precision)
+                bodyAngle = avgElevation * 1000
+              } else {
+                bodyAngle = null
+              }
+            }
+          } else {
+            bodyAngle = null
+          }
+        } else {
+          // Standard angle-based measurement
+          const pointA = useRight ? landmarks[config.primaryAngle.pointA.right] : landmarks[config.primaryAngle.pointA.left]
+          const pointB = useRight ? landmarks[config.primaryAngle.pointB.right] : landmarks[config.primaryAngle.pointB.left]
+          const pointC = useRight ? landmarks[config.primaryAngle.pointC.right] : landmarks[config.primaryAngle.pointC.left]
+
+          // Only calculate angle if all required landmarks are visible
+          const v = (p: any) => clamp01(p?.visibility ?? 0)
+          const allVisible = v(pointA) >= 0.5 && v(pointB) >= 0.5 && v(pointC) >= 0.5
+          
+          const rawAngle = allVisible ? angleABC(pointA, pointB, pointC) : null
+          bodyAngle = rawAngle
+
+          // Smooth angle (moving average last 6 frames)
+          if (bodyAngle != null) {
+            const buf = angleBufRef.current
+            buf.push(bodyAngle)
+            if (buf.length > 6) buf.shift()
+            const avg = buf.reduce((a, b) => a + b, 0) / buf.length
+            bodyAngle = avg
+          }
         }
       }
 
-      // Track min angle during rep
+      // Track min angle / max elevation during rep
       if (bodyAngle != null) {
-        repMinAngleRef.current = Math.min(repMinAngleRef.current, bodyAngle)
+        if (config.measurementType === 'elevation') {
+          // For elevation, track maximum (higher is better)
+          repMaxElevationRef.current = Math.max(repMaxElevationRef.current, bodyAngle)
+        } else {
+          // For angles, track minimum (lower angle = deeper movement)
+          repMinAngleRef.current = Math.min(repMinAngleRef.current, bodyAngle)
+        }
       }
 
       // Rep counting
-      const { repCount, state, repJustCounted } = repCounterRef.current.update(bodyAngle)
+      // For elevation-based exercises, convert elevation back to normalized value for threshold comparison
+      let valueForRepCounter = bodyAngle
+      if (config.measurementType === 'elevation' && bodyAngle != null) {
+        // Convert back to normalized elevation (divide by 1000)
+        valueForRepCounter = bodyAngle / 1000
+      }
+      const { repCount, state, repJustCounted } = repCounterRef.current.update(valueForRepCounter)
 
       // Convert RepState to SessionMetrics repState format
       const repState: "up" | "down" | "rest" = state === "UP" ? "up" : state === "DOWN" ? "down" : "rest"
@@ -488,13 +574,21 @@ export function CameraArea() {
       }
 
       if (repJustCounted) {
-        const minAngle = repMinAngleRef.current === 999 ? (bodyAngle ?? 999) : repMinAngleRef.current
+        let valueForScoring: number
+        if (config.measurementType === 'elevation') {
+          // For elevation, use max elevation (convert back to normalized)
+          valueForScoring = repMaxElevationRef.current === 0 ? (bodyAngle ? bodyAngle / 1000 : 0) : repMaxElevationRef.current / 1000
+        } else {
+          // For angles, use min angle
+          valueForScoring = repMinAngleRef.current === 999 ? (bodyAngle ?? 999) : repMinAngleRef.current
+        }
         const downTs = lastDownTsRef.current
         const repDuration = downTs ? Date.now() - downTs : null
-        lastScore = scoreRep(minAngle, config) + (repDuration != null && repDuration < 900 ? -20 : 0)
+        lastScore = scoreRep(valueForScoring, config) + (repDuration != null && repDuration < 900 ? -20 : 0)
 
         // reset trackers for next rep
         repMinAngleRef.current = 999
+        repMaxElevationRef.current = 0
         lastDownTsRef.current = null
       }
 
@@ -505,7 +599,14 @@ export function CameraArea() {
 
       // Update app state metrics (CoachingPanel can display these)
       // Use functional update to avoid stale state, and preserve lastScore if not updated
-      const roundedBodyAngle = bodyAngle != null ? Math.round(bodyAngle) : 90
+      // For elevation, convert back to a displayable value (multiply by 100 to show as percentage)
+      let roundedBodyAngle: number
+      if (config.measurementType === 'elevation' && bodyAngle != null) {
+        // Convert normalized elevation to percentage for display
+        roundedBodyAngle = Math.round((bodyAngle / 1000) * 100 * 100) / 100 // Show as percentage with 2 decimals
+      } else {
+        roundedBodyAngle = bodyAngle != null ? Math.round(bodyAngle) : 90
+      }
       const roundedLeftAngle = leftAngle != null ? Math.round(leftAngle) : undefined
       const roundedRightAngle = rightAngle != null ? Math.round(rightAngle) : undefined
       const poseConf = conf ?? 0
@@ -513,8 +614,9 @@ export function CameraArea() {
       // Update ref for debug info
       currentRepCountRef.current = repCount
       
-      setMetrics((prev) => ({
-        ...prev,
+      // Build complete metrics object
+      const updatedMetrics: SessionMetrics = {
+        ...metrics,
         bodyAngle: roundedBodyAngle,
         leftBodyAngle: config.trackBothSides ? roundedLeftAngle : undefined,
         rightBodyAngle: config.trackBothSides ? roundedRightAngle : undefined,
@@ -522,8 +624,27 @@ export function CameraArea() {
         poseConfidence: poseConf,
         feedback,
         repCount,
-        lastScore: lastScore !== undefined ? lastScore : prev.lastScore,
-      }))
+        lastScore: lastScore !== undefined ? lastScore : metrics.lastScore,
+      }
+      
+      // Update React state
+      setMetrics(updatedMetrics)
+      
+      // Save metrics to database
+      // Send when: rep count changes, score is updated, or feedback status changes
+      const shouldSave = 
+        repCount !== metrics.repCount || 
+        (lastScore !== undefined && lastScore !== metrics.lastScore) ||
+        feedback.status !== metrics.feedback.status ||
+        repJustCounted // Always save when a rep is just counted
+      
+      if (shouldSave) {
+        fetch("/api/session/metrics", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updatedMetrics),
+        }).catch((err) => console.error("Failed to save metrics:", err))
+      }
 
       // Update debug info separately (not inside setMetrics to avoid React error)
       setDebugInfo({
@@ -544,6 +665,17 @@ export function CameraArea() {
     setSessionActive(true)
     setShowTip(false)
 
+    // Start the session via API
+    try {
+      await fetch("/api/session/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId: plan.name }), // Use plan name as planId for now
+      })
+    } catch (error) {
+      console.error("Error starting session:", error)
+    }
+
     // Get the first exercise from the plan
     const firstExercise = plan.exercises[0]
     const exerciseToUse = firstExercise?.exercise ?? metrics.currentExercise
@@ -557,6 +689,7 @@ export function CameraArea() {
     // reset session metrics
     repCounterRef.current.reset()
     repMinAngleRef.current = 999
+    repMaxElevationRef.current = 0
     lastDownTsRef.current = null
     angleBufRef.current = []
     leftAngleBufRef.current = []
@@ -565,6 +698,10 @@ export function CameraArea() {
     rightAngleHistoryRef.current = []
     activeSideRef.current = null
     currentRepCountRef.current = 0
+    // Reset elevation tracking
+    restPositionRef.current = null
+    restPositionSamplesRef.current = []
+    elevationBufRef.current = []
 
     setMetrics((prev) => ({
       ...prev,
@@ -598,11 +735,27 @@ export function CameraArea() {
     stopLoop()
   }
 
-  function handleEnd() {
+  async function handleEnd() {
     setSessionActive(false)
     stopLoop()
     stopCamera()
     setElapsed(0)
+    
+    // Call API to end session and get result
+    try {
+      const response = await fetch("/api/session/end", {
+        method: "POST",
+      })
+      if (response.ok) {
+        const data = await response.json()
+        if (data.result) {
+          setSessionResult(data.result)
+        }
+      }
+    } catch (error) {
+      console.error("Error ending session:", error)
+    }
+    
     router.push("/summary")
   }
 
