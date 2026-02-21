@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/tooltip"
 
 import { createPoseLandmarker } from "@/lib/pose/poseEngine"
-import { angleABC, calculateElevation } from "@/lib/pose/angles"
+import { angleABC } from "@/lib/pose/angles"
 import { createRepCounter } from "@/lib/pose/repCounter"
 import { getPoseConfig, getExerciseConfig, LANDMARKS } from "@/lib/pose/config"
 import { scoreRep } from "@/lib/pose/feedback"
@@ -28,7 +28,7 @@ function clamp01(x: number) {
 }
 
 export function CameraArea() {
-  const { sessionActive, setSessionActive, metrics, setMetrics, plan, setSessionResult } = useAppState()
+  const { sessionActive, setSessionActive, metrics, setMetrics, plan, setSessionResult, demoWatched } = useAppState()
   
   // Get pose configuration based on current exercise, fallback to injury area
   const exerciseConfig = getExerciseConfig(metrics.currentExercise)
@@ -44,6 +44,13 @@ export function CameraArea() {
     bodyAngle: number
     repState: string
     repCount: number
+    // Elevation-specific debug info
+    elevationState?: string
+    heelY?: number
+    baselineHeelY?: number
+    elevation?: number
+    velocity?: number
+    stableFrames?: number
   } | null>(null)
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -62,7 +69,6 @@ export function CameraArea() {
   // Rep counter + rep scoring (will be initialized with config in handleStart)
   const repCounterRef = useRef<ReturnType<typeof createRepCounter> | null>(null)
   const repMinAngleRef = useRef<number>(999)
-  const repMaxElevationRef = useRef<number>(0) // For elevation-based exercises, track max elevation
   const lastDownTsRef = useRef<number | null>(null)
   const currentRepCountRef = useRef<number>(0)
 
@@ -76,10 +82,31 @@ export function CameraArea() {
   const rightAngleHistoryRef = useRef<number[]>([])
   const activeSideRef = useRef<"left" | "right" | null>(null) // Which side is currently being tracked
   
-  // For elevation-based exercises (e.g., calf raises): track rest position
-  const restPositionRef = useRef<number | null>(null) // Baseline ankle Y position (normalized)
-  const restPositionSamplesRef = useRef<number[]>([]) // Samples to establish baseline
-  const elevationBufRef = useRef<number[]>([]) // Smoothing buffer for elevation
+  // For elevation-based exercises (e.g., calf raises): state machine with hysteresis
+  type ElevationState = "CALIBRATING_REST" | "REST" | "UP" | "MOVING"
+  const elevationStateRef = useRef<ElevationState>("CALIBRATING_REST")
+  const baselineHeelYRef = useRef<number | null>(null) // Baseline heel Y position at rest (normalized)
+  const heelYSamplesRef = useRef<number[]>([]) // Samples for calibration
+  const currentHeelYRef = useRef<number | null>(null) // Current heel Y position
+  const prevHeelYRef = useRef<number | null>(null) // Previous heel Y for velocity calculation
+  const elevationRef = useRef<number>(0) // Current elevation = baselineY - heelY
+  const velocityRef = useRef<number>(0) // Current velocity = abs(heelY - prevHeelY)
+  const stableFramesRef = useRef<number>(0) // Consecutive frames with velocity < threshold
+  const upFramesRef = useRef<number>(0) // Consecutive frames above upThreshold
+  const downFramesRef = useRef<number>(0) // Consecutive frames below downThreshold
+  const minHeelYRef = useRef<number | null>(null) // Minimum heel Y during current rep (highest elevation/raised position)
+  const maxHeelYRef = useRef<number | null>(null) // Maximum heel Y during current rep (lowest elevation/rest position)
+  const elevationDiffRef = useRef<number>(0) // Difference between rest and raised positions (for display)
+  
+  // Constants for state machine
+  const STABLE_VEL_THRESHOLD = 0.001 // Velocity threshold for stability (normalized)
+  const CALIBRATION_STABLE_FRAMES = 20 // Frames needed for calibration
+  const CALIBRATION_VARIANCE_THRESHOLD = 0.0001 // Max variance for calibration
+  const UP_FRAMES_THRESHOLD = 3 // Frames above threshold to enter UP
+  const DOWN_FRAMES_THRESHOLD = 3 // Frames below threshold to enter REST
+  const REST_STABLE_FRAMES = 8 // Stable frames needed to enter REST
+  const BASELINE_ADAPT_STABLE_FRAMES = 15 // Stable frames needed for baseline adaptation
+  const BASELINE_EMA_ALPHA = 0.1 // EMA coefficient for baseline adaptation
   
   // Store current pose config ref to avoid stale closures
   const poseConfigRef = useRef(poseConfig)
@@ -268,9 +295,10 @@ export function CameraArea() {
     // Check primary angle/elevation (depth)
     let primaryOk: boolean
     if (config.measurementType === 'elevation') {
-      // For elevation: higher value = better (need to convert bodyAngle back to normalized)
-      const normalizedElevation = bodyAngle / 1000
-      primaryOk = normalizedElevation >= config.shallowAngle
+      // For elevation: check if the difference between top and rest meets the threshold
+      // Use the elevation difference if available, otherwise use current elevation
+      const elevationValue = elevationDiffRef.current > 0 ? elevationDiffRef.current : (bodyAngle ?? 0)
+      primaryOk = elevationValue >= config.shallowAngle
     } else {
       // For angles: lower angle = deeper movement
       primaryOk = bodyAngle <= config.shallowAngle
@@ -312,8 +340,8 @@ export function CameraArea() {
     // Determine status based on measurement type
     let status: "Good form" | "Needs work" | "Watch form"
     if (config.measurementType === 'elevation') {
-      const normalizedElevation = bodyAngle / 1000
-      status = hasIssues || normalizedElevation < config.shallowAngle 
+      const elevationValue = elevationDiffRef.current > 0 ? elevationDiffRef.current : (bodyAngle ?? 0)
+      status = hasIssues || elevationValue < config.shallowAngle 
         ? "Needs work" 
         : "Good form"
     } else {
@@ -486,39 +514,136 @@ export function CameraArea() {
 
         // Check if this exercise uses elevation measurement (e.g., calf raises)
         if (config.measurementType === 'elevation' && config.elevationLandmark) {
-          const ankleLandmark = useRight ? landmarks[config.elevationLandmark.right] : landmarks[config.elevationLandmark.left]
+          const heelLandmark = useRight ? landmarks[config.elevationLandmark.right] : landmarks[config.elevationLandmark.left]
           const v = (p: any) => clamp01(p?.visibility ?? 0)
-          const ankleVisible = ankleLandmark && v(ankleLandmark) >= 0.5
+          const heelVisible = heelLandmark && v(heelLandmark) >= 0.5
 
-          if (ankleVisible) {
-            // Establish rest position (baseline) during first few seconds
-            if (restPositionRef.current === null) {
-              restPositionSamplesRef.current.push(ankleLandmark.y)
-              // Keep last 30 samples (about 1 second at 30fps)
-              if (restPositionSamplesRef.current.length > 30) {
-                restPositionSamplesRef.current.shift()
-              }
-              // After 30 samples, set rest position as the maximum Y (lowest point)
-              if (restPositionSamplesRef.current.length === 30) {
-                restPositionRef.current = Math.max(...restPositionSamplesRef.current)
-              }
+          if (heelVisible) {
+            // Track heel Y position directly (point B)
+            // In normalized coordinates, Y increases downward
+            const currentHeelY = heelLandmark.y
+            currentHeelYRef.current = currentHeelY
+            
+            // Calculate velocity (change in Y position)
+            let velocity = 0
+            if (prevHeelYRef.current !== null) {
+              velocity = Math.abs(currentHeelY - prevHeelYRef.current)
+            }
+            velocityRef.current = velocity
+            prevHeelYRef.current = currentHeelY
+            
+            // Update stability counter
+            if (velocity < STABLE_VEL_THRESHOLD) {
+              stableFramesRef.current += 1
             } else {
-              // Calculate elevation from rest position
-              const rawElevation = calculateElevation(ankleLandmark, restPositionRef.current)
-              
-              if (rawElevation != null) {
-                // Smooth elevation (moving average last 6 frames)
-                elevationBufRef.current.push(rawElevation)
-                if (elevationBufRef.current.length > 6) elevationBufRef.current.shift()
-                const avgElevation = elevationBufRef.current.reduce((a, b) => a + b, 0) / elevationBufRef.current.length
-                // Convert elevation to a value that can be used like angle (multiply by 1000 for better precision)
-                bodyAngle = avgElevation * 1000
-              } else {
-                bodyAngle = null
+              stableFramesRef.current = 0
+            }
+            
+            const state = elevationStateRef.current
+            const upThreshold = config.primaryAngle.upThreshold ?? 0.02
+            const downThreshold = config.primaryAngle.downThreshold ?? 0.005
+            
+            // State machine logic
+            if (state === "CALIBRATING_REST") {
+              // Collect samples for calibration
+              heelYSamplesRef.current.push(currentHeelY)
+              // Keep last 30 samples
+              if (heelYSamplesRef.current.length > 30) {
+                heelYSamplesRef.current.shift()
               }
+              
+              // Check if we have enough stable frames and low variance
+              if (heelYSamplesRef.current.length >= CALIBRATION_STABLE_FRAMES && 
+                  stableFramesRef.current >= CALIBRATION_STABLE_FRAMES) {
+                // Calculate variance
+                const mean = heelYSamplesRef.current.reduce((a, b) => a + b, 0) / heelYSamplesRef.current.length
+                const variance = heelYSamplesRef.current.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / heelYSamplesRef.current.length
+                
+                if (variance < CALIBRATION_VARIANCE_THRESHOLD) {
+                  // Set baseline to max Y (lowest heel = rest position)
+                  baselineHeelYRef.current = Math.max(...heelYSamplesRef.current)
+                  elevationStateRef.current = "REST"
+                }
+              }
+              
+              bodyAngle = null // Don't calculate until baseline is established
+            } else if (baselineHeelYRef.current !== null) {
+              // Calculate elevation: elevation = baselineY - currentY
+              // When heel rises, Y decreases, so elevation = baselineY - currentY is positive
+              const elevation = baselineHeelYRef.current - currentHeelY
+              elevationRef.current = elevation
+              
+              // Update state machine with hysteresis
+              if (state === "REST") {
+                // Baseline adaptation: slowly update baseline toward current heelY when stable
+                if (stableFramesRef.current >= BASELINE_ADAPT_STABLE_FRAMES) {
+                  // EMA update, but never decrease baseline below current max
+                  const newBaseline = baselineHeelYRef.current * (1 - BASELINE_EMA_ALPHA) + currentHeelY * BASELINE_EMA_ALPHA
+                  // Baseline should represent rest/lowest elevation, so use max
+                  baselineHeelYRef.current = Math.max(baselineHeelYRef.current, newBaseline, currentHeelY)
+                }
+                
+                // Check for transition to UP
+                if (elevation > upThreshold) {
+                  upFramesRef.current += 1
+                  if (upFramesRef.current >= UP_FRAMES_THRESHOLD) {
+                    elevationStateRef.current = "UP"
+                    upFramesRef.current = 0
+                    downFramesRef.current = 0
+                  }
+                } else {
+                  upFramesRef.current = 0
+                }
+              } else if (state === "UP") {
+                // Check for transition to REST or MOVING
+                if (elevation < downThreshold) {
+                  downFramesRef.current += 1
+                  if (downFramesRef.current >= DOWN_FRAMES_THRESHOLD && 
+                      stableFramesRef.current >= REST_STABLE_FRAMES) {
+                    elevationStateRef.current = "REST"
+                    upFramesRef.current = 0
+                    downFramesRef.current = 0
+                  } else {
+                    elevationStateRef.current = "MOVING"
+                  }
+                } else {
+                  downFramesRef.current = 0
+                  if (velocity > STABLE_VEL_THRESHOLD) {
+                    elevationStateRef.current = "MOVING"
+                  }
+                }
+              } else if (state === "MOVING") {
+                // Check for transition to UP or REST
+                if (elevation > upThreshold) {
+                  upFramesRef.current += 1
+                  if (upFramesRef.current >= UP_FRAMES_THRESHOLD) {
+                    elevationStateRef.current = "UP"
+                    upFramesRef.current = 0
+                    downFramesRef.current = 0
+                  }
+                } else if (elevation < downThreshold && stableFramesRef.current >= REST_STABLE_FRAMES) {
+                  downFramesRef.current += 1
+                  if (downFramesRef.current >= DOWN_FRAMES_THRESHOLD) {
+                    elevationStateRef.current = "REST"
+                    upFramesRef.current = 0
+                    downFramesRef.current = 0
+                  }
+                } else {
+                  upFramesRef.current = 0
+                  downFramesRef.current = 0
+                }
+              }
+              
+              // Use elevation directly for rep counting (no scaling)
+              bodyAngle = elevation
+            } else {
+              bodyAngle = null
             }
           } else {
             bodyAngle = null
+            currentHeelYRef.current = null
+            prevHeelYRef.current = null
+            stableFramesRef.current = 0
           }
         } else {
           // Standard angle-based measurement
@@ -544,11 +669,21 @@ export function CameraArea() {
         }
       }
 
-      // Track min angle / max elevation during rep
+      // Track min angle / elevation positions during rep
       if (bodyAngle != null) {
         if (config.measurementType === 'elevation') {
-          // For elevation, track maximum (higher is better)
-          repMaxElevationRef.current = Math.max(repMaxElevationRef.current, bodyAngle)
+          // For elevation, track the heel Y positions
+          // Lower Y = higher elevation (heel is raised more)
+          if (currentHeelYRef.current != null) {
+            // Track minimum Y (highest elevation/raised position) during up phase
+            if (minHeelYRef.current === null || currentHeelYRef.current < minHeelYRef.current) {
+              minHeelYRef.current = currentHeelYRef.current
+            }
+            // Track maximum Y (lowest elevation/rest position) during down phase
+            if (maxHeelYRef.current === null || currentHeelYRef.current > maxHeelYRef.current) {
+              maxHeelYRef.current = currentHeelYRef.current
+            }
+          }
         } else {
           // For angles, track minimum (lower angle = deeper movement)
           repMinAngleRef.current = Math.min(repMinAngleRef.current, bodyAngle)
@@ -556,28 +691,65 @@ export function CameraArea() {
       }
 
       // Rep counting
-      // For elevation-based exercises, convert elevation back to normalized value for threshold comparison
-      let valueForRepCounter = bodyAngle
-      if (config.measurementType === 'elevation' && bodyAngle != null) {
-        // Convert back to normalized elevation (divide by 1000)
-        valueForRepCounter = bodyAngle / 1000
+      let repCount: number
+      let repJustCounted: boolean
+      let repState: "up" | "down" | "rest"
+      
+      if (config.measurementType === 'elevation') {
+        // For elevation exercises, use state machine state for repState
+        const elevationState = elevationStateRef.current
+        if (elevationState === "UP") {
+          repState = "up"
+        } else if (elevationState === "REST" || elevationState === "CALIBRATING_REST") {
+          repState = "rest"
+        } else {
+          repState = "down" // MOVING state
+        }
+        
+        // Use repCounter for rep counting based on elevation value
+        // repCounter expects elevation to go UP (higher value) for "up" position
+        const { repCount: rc, state: rcState, repJustCounted: rjc } = repCounterRef.current.update(bodyAngle)
+        repCount = rc
+        repJustCounted = rjc
+        
+        // Override repState with state machine state for better accuracy
+        // But keep repCounter's state for internal logic
+      } else {
+        // For angle-based exercises, use repCounter state
+        const { repCount: rc, state: rcState, repJustCounted: rjc } = repCounterRef.current.update(bodyAngle)
+        repCount = rc
+        repJustCounted = rjc
+        repState = rcState === "UP" ? "up" : rcState === "DOWN" ? "down" : "rest"
       }
-      const { repCount, state, repJustCounted } = repCounterRef.current.update(valueForRepCounter)
-
-      // Convert RepState to SessionMetrics repState format
-      const repState: "up" | "down" | "rest" = state === "UP" ? "up" : state === "DOWN" ? "down" : "rest"
 
       let lastScore: number | undefined = undefined
 
-      if (state === "DOWN" && lastDownTsRef.current == null) {
-        lastDownTsRef.current = Date.now()
+      // Track when entering down/rest state for rep timing
+      if (config.measurementType === 'elevation') {
+        const elevationState = elevationStateRef.current
+        if ((elevationState === "REST" || elevationState === "MOVING") && lastDownTsRef.current == null) {
+          lastDownTsRef.current = Date.now()
+        }
+      } else {
+        // For angle-based exercises, use repCounter state
+        if (repState === "down" && lastDownTsRef.current == null) {
+          lastDownTsRef.current = Date.now()
+        }
       }
 
       if (repJustCounted) {
         let valueForScoring: number
         if (config.measurementType === 'elevation') {
-          // For elevation, use max elevation (convert back to normalized)
-          valueForScoring = repMaxElevationRef.current === 0 ? (bodyAngle ? bodyAngle / 1000 : 0) : repMaxElevationRef.current / 1000
+          // For elevation, calculate the difference between rest and raised positions
+          // This difference should be consistent regardless of distance
+          if (minHeelYRef.current != null && maxHeelYRef.current != null) {
+            // Difference = max Y - min Y (rest Y - raised Y, positive value, larger = better range of motion)
+            const elevationDiff = maxHeelYRef.current - minHeelYRef.current
+            elevationDiffRef.current = elevationDiff
+            valueForScoring = elevationDiff
+          } else {
+            valueForScoring = bodyAngle ?? 0
+          }
         } else {
           // For angles, use min angle
           valueForScoring = repMinAngleRef.current === 999 ? (bodyAngle ?? 999) : repMinAngleRef.current
@@ -588,7 +760,8 @@ export function CameraArea() {
 
         // reset trackers for next rep
         repMinAngleRef.current = 999
-        repMaxElevationRef.current = 0
+        minHeelYRef.current = null
+        maxHeelYRef.current = null
         lastDownTsRef.current = null
       }
 
@@ -599,11 +772,11 @@ export function CameraArea() {
 
       // Update app state metrics (CoachingPanel can display these)
       // Use functional update to avoid stale state, and preserve lastScore if not updated
-      // For elevation, convert back to a displayable value (multiply by 100 to show as percentage)
+      // For elevation, bodyAngle is already in normalized coordinates (no scaling needed)
       let roundedBodyAngle: number
       if (config.measurementType === 'elevation' && bodyAngle != null) {
-        // Convert normalized elevation to percentage for display
-        roundedBodyAngle = Math.round((bodyAngle / 1000) * 100 * 100) / 100 // Show as percentage with 2 decimals
+        // bodyAngle is elevation in normalized coordinates, round to 4 decimals
+        roundedBodyAngle = Math.round(bodyAngle * 10000) / 10000
       } else {
         roundedBodyAngle = bodyAngle != null ? Math.round(bodyAngle) : 90
       }
@@ -614,46 +787,59 @@ export function CameraArea() {
       // Update ref for debug info
       currentRepCountRef.current = repCount
       
-      // Build complete metrics object
-      const updatedMetrics: SessionMetrics = {
-        ...metrics,
-        bodyAngle: roundedBodyAngle,
-        leftBodyAngle: config.trackBothSides ? roundedLeftAngle : undefined,
-        rightBodyAngle: config.trackBothSides ? roundedRightAngle : undefined,
-        repState,
-        poseConfidence: poseConf,
-        feedback,
-        repCount,
-        lastScore: lastScore !== undefined ? lastScore : metrics.lastScore,
-      }
-      
-      // Update React state
-      setMetrics(updatedMetrics)
-      
-      // Save metrics to database
-      // Send when: rep count changes, score is updated, or feedback status changes
-      const shouldSave = 
-        repCount !== metrics.repCount || 
-        (lastScore !== undefined && lastScore !== metrics.lastScore) ||
-        feedback.status !== metrics.feedback.status ||
-        repJustCounted // Always save when a rep is just counted
-      
-      if (shouldSave) {
-        fetch("/api/session/metrics", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updatedMetrics),
-        }).catch((err) => console.error("Failed to save metrics:", err))
-      }
+      // Update React state using functional update to avoid stale closures
+      setMetrics((prev) => {
+        const updatedMetrics: SessionMetrics = {
+          ...prev,
+          bodyAngle: roundedBodyAngle,
+          leftBodyAngle: config.trackBothSides ? roundedLeftAngle : undefined,
+          rightBodyAngle: config.trackBothSides ? roundedRightAngle : undefined,
+          repState,
+          poseConfidence: poseConf,
+          feedback,
+          repCount,
+          lastScore: lastScore !== undefined ? lastScore : prev.lastScore,
+        }
+        
+        // Save metrics to database
+        // Send when: rep count changes, score is updated, or feedback status changes
+        const shouldSave = 
+          repCount !== prev.repCount || 
+          (lastScore !== undefined && lastScore !== prev.lastScore) ||
+          feedback.status !== prev.feedback.status ||
+          repJustCounted // Always save when a rep is just counted
+        
+        if (shouldSave) {
+          fetch("/api/session/metrics", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(updatedMetrics),
+          }).catch((err) => console.error("Failed to save metrics:", err))
+        }
+        
+        return updatedMetrics
+      })
 
       // Update debug info separately (not inside setMetrics to avoid React error)
-      setDebugInfo({
+      const debugData: typeof debugInfo = {
         landmarksPresent: true,
         poseConfidence: poseConf,
         bodyAngle: roundedBodyAngle,
         repState,
         repCount,
-      })
+      }
+      
+      // Add elevation-specific debug info
+      if (config.measurementType === 'elevation') {
+        debugData.elevationState = elevationStateRef.current
+        debugData.heelY = currentHeelYRef.current != null ? Math.round(currentHeelYRef.current * 10000) / 10000 : undefined
+        debugData.baselineHeelY = baselineHeelYRef.current != null ? Math.round(baselineHeelYRef.current * 10000) / 10000 : undefined
+        debugData.elevation = elevationRef.current != null ? Math.round(elevationRef.current * 10000) / 10000 : undefined
+        debugData.velocity = Math.round(velocityRef.current * 10000) / 10000
+        debugData.stableFrames = stableFramesRef.current
+      }
+      
+      setDebugInfo(debugData)
 
       rafRef.current = requestAnimationFrame(loop)
     }
@@ -689,7 +875,6 @@ export function CameraArea() {
     // reset session metrics
     repCounterRef.current.reset()
     repMinAngleRef.current = 999
-    repMaxElevationRef.current = 0
     lastDownTsRef.current = null
     angleBufRef.current = []
     leftAngleBufRef.current = []
@@ -698,10 +883,20 @@ export function CameraArea() {
     rightAngleHistoryRef.current = []
     activeSideRef.current = null
     currentRepCountRef.current = 0
-    // Reset elevation tracking
-    restPositionRef.current = null
-    restPositionSamplesRef.current = []
-    elevationBufRef.current = []
+    // Reset elevation tracking and state machine
+    elevationStateRef.current = "CALIBRATING_REST"
+    baselineHeelYRef.current = null
+    heelYSamplesRef.current = []
+    currentHeelYRef.current = null
+    prevHeelYRef.current = null
+    elevationRef.current = 0
+    velocityRef.current = 0
+    stableFramesRef.current = 0
+    upFramesRef.current = 0
+    downFramesRef.current = 0
+    minHeelYRef.current = null
+    maxHeelYRef.current = null
+    elevationDiffRef.current = 0
 
     setMetrics((prev) => ({
       ...prev,
@@ -815,8 +1010,18 @@ export function CameraArea() {
                   Landmarks: {debugInfo.landmarksPresent ? "✅" : "❌"}
                 </div>
                 <div>Conf: {(debugInfo.poseConfidence * 100).toFixed(0)}%</div>
-                <div>Angle: {debugInfo.bodyAngle}°</div>
+                <div>{poseConfigRef.current.measurementType === 'elevation' ? 'Heel Elevation' : 'Angle'}: {poseConfigRef.current.measurementType === 'elevation' ? (debugInfo.bodyAngle != null ? debugInfo.bodyAngle.toFixed(4) : 'N/A') : `${debugInfo.bodyAngle}°`}</div>
                 <div>State: {debugInfo.repState}</div>
+                {debugInfo.elevationState && (
+                  <>
+                    <div>Elev State: {debugInfo.elevationState}</div>
+                    <div>HeelY: {debugInfo.heelY?.toFixed(4) ?? 'N/A'}</div>
+                    <div>Baseline: {debugInfo.baselineHeelY?.toFixed(4) ?? 'N/A'}</div>
+                    <div>Elev: {debugInfo.elevation?.toFixed(4) ?? 'N/A'}</div>
+                    <div>Vel: {debugInfo.velocity?.toFixed(6) ?? 'N/A'}</div>
+                    <div>Stable: {debugInfo.stableFrames ?? 0}</div>
+                  </>
+                )}
                 <div>Reps: {debugInfo.repCount}</div>
               </div>
             </div>
@@ -847,10 +1052,27 @@ export function CameraArea() {
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
         {!sessionActive ? (
-          <Button onClick={handleStart} className="gap-2">
-            <Play className="h-4 w-4" />
-            Start
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button 
+                    onClick={handleStart} 
+                    className="gap-2"
+                    disabled={!demoWatched[metrics.currentExercise]}
+                  >
+                    <Play className="h-4 w-4" />
+                    Start
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!demoWatched[metrics.currentExercise] && (
+                <TooltipContent>
+                  <p>Please watch the demo video for {metrics.currentExercise} first</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         ) : (
           <Button onClick={handlePause} variant="outline" className="gap-2">
             <Pause className="h-4 w-4" />

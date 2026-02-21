@@ -2,6 +2,7 @@
 
 import { CameraArea } from "@/components/session/camera-area"
 import { CoachingPanel } from "@/components/session/coaching-panel"
+import { DemoVideo } from "@/components/session/demo-video"
 
 export default function SessionPage() {
   return (
@@ -14,6 +15,10 @@ export default function SessionPage() {
           Follow along with your exercises. Use the demo controls to simulate
           feedback.
         </p>
+      </div>
+
+      <div className="mb-8">
+        <DemoVideo />
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[1fr_380px]">

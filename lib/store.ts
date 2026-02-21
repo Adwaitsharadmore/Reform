@@ -63,6 +63,8 @@ export interface AppState {
   setSessionResult: (result: SessionResult) => void
   sessionActive: boolean
   setSessionActive: (active: boolean) => void
+  demoWatched: Record<string, boolean> // ExerciseType -> boolean
+  setDemoWatched: (exercise: string, watched: boolean) => void
 }
 
 export const AppContext = createContext<AppState | null>(null)

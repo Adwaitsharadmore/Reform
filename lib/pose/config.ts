@@ -16,6 +16,8 @@ export const LANDMARKS = {
   RIGHT_KNEE: 26,
   LEFT_ANKLE: 27,
   RIGHT_ANKLE: 28,
+  LEFT_HEEL: 29,
+  RIGHT_HEEL: 30,
   LEFT_FOOT_INDEX: 31,
   RIGHT_FOOT_INDEX: 32,
 } as const
@@ -158,34 +160,34 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
   "Calf Raise": {
     primaryAngle: {
       pointA: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
-      pointB: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+      pointB: { left: LANDMARKS.LEFT_HEEL, right: LANDMARKS.RIGHT_HEEL },
       pointC: { left: LANDMARKS.LEFT_FOOT_INDEX, right: LANDMARKS.RIGHT_FOOT_INDEX },
-      label: "Ankle elevation",
-      // For elevation: upThreshold = minimum elevation to be considered "up" (on toes)
-      // downThreshold = maximum elevation to be considered "down" (flat-footed)
-      // Values in normalized coordinates (0.02 = 2% of frame height)
-      upThreshold: 0.02, // Minimum elevation to count as "up" position
-      downThreshold: 0.005, // Maximum elevation to count as "down" position (rest)
+      label: "Heel elevation",
+      // For elevation: upThreshold = minimum elevation difference to be considered "up" (on toes)
+      // downThreshold = maximum elevation difference to be considered "down" (flat-footed)
+      // Values in normalized coordinates (difference between rest and top positions)
+      upThreshold: 0.02, // Minimum elevation difference to count as "up" position
+      downThreshold: 0.005, // Maximum elevation difference to count as "down" position (rest)
     },
     additionalAngles: [
       {
-        pointA: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
-        pointB: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
-        pointC: { left: LANDMARKS.LEFT_FOOT_INDEX, right: LANDMARKS.RIGHT_FOOT_INDEX },
-        label: "Ankle angle",
-        minAngle: 160, // >160°
+        pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+        pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+        pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+        label: "Knee angle",
+        minAngle: 155, // ≥155° for straight knees
       },
     ],
-    // For elevation: shallowAngle = minimum good elevation, veryShallowAngle = minimum acceptable elevation
-    shallowAngle: 0.015, // Minimum elevation for good form (1.5% of frame height)
-    veryShallowAngle: 0.01, // Minimum elevation for acceptable form (1% of frame height)
+    // For elevation: shallowAngle = minimum good elevation difference, veryShallowAngle = minimum acceptable elevation difference
+    shallowAngle: 0.015, // Minimum elevation difference for good form
+    veryShallowAngle: 0.01, // Minimum elevation difference for acceptable form
     depthLabel: "Heel elevation",
-    alignmentLabel: "Ankle alignment",
+    alignmentLabel: "Knee alignment",
     additionalLabels: ["Knee angle"],
-    confidencePoints: [LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.LEFT_FOOT_INDEX, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE, LANDMARKS.RIGHT_FOOT_INDEX],
+    confidencePoints: [LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.LEFT_HEEL, LANDMARKS.LEFT_FOOT_INDEX, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE, LANDMARKS.RIGHT_HEEL, LANDMARKS.RIGHT_FOOT_INDEX],
     trackBothSides: false,
     measurementType: 'elevation',
-    elevationLandmark: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+    elevationLandmark: { left: LANDMARKS.LEFT_HEEL, right: LANDMARKS.RIGHT_HEEL },
   },
   Lunge: {
     primaryAngle: {
