@@ -34,6 +34,9 @@ export interface PoseConfig {
   alignmentLabel: string
   // Confidence calculation landmarks
   confidencePoints: number[]
+  // For exercises where both sides may move independently (e.g., shoulder raises)
+  // If true, track both sides and use the one with more movement
+  trackBothSides: boolean
 }
 
 export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
@@ -48,6 +51,7 @@ export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
     depthLabel: "Depth",
     alignmentLabel: "Knee alignment",
     confidencePoints: [LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE],
+    trackBothSides: false,
   },
   Ankle: {
     pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
@@ -60,6 +64,7 @@ export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
     depthLabel: "Range of motion",
     alignmentLabel: "Ankle alignment",
     confidencePoints: [LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE],
+    trackBothSides: false,
   },
   Hip: {
     pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
@@ -72,6 +77,7 @@ export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
     depthLabel: "Hip depth",
     alignmentLabel: "Hip alignment",
     confidencePoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE],
+    trackBothSides: false,
   },
   Shoulder: {
     pointA: { left: LANDMARKS.LEFT_ELBOW, right: LANDMARKS.RIGHT_ELBOW },
@@ -84,6 +90,7 @@ export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
     depthLabel: "Range of motion",
     alignmentLabel: "Shoulder alignment",
     confidencePoints: [LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP],
+    trackBothSides: true, // Track both shoulders and use the one with more movement
   },
   Back: {
     pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
@@ -96,6 +103,7 @@ export const POSE_CONFIGS: Record<InjuryArea, PoseConfig> = {
     depthLabel: "Posture",
     alignmentLabel: "Spine alignment",
     confidencePoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE],
+    trackBothSides: false,
   },
 }
 

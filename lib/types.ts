@@ -42,6 +42,8 @@ export interface SessionMetrics {
   targetReps: number
   lastScore: number
   bodyAngle: number // Generic body angle (replaces kneeAngle for different injury areas)
+  leftBodyAngle?: number // Left side angle (for exercises that track both sides)
+  rightBodyAngle?: number // Right side angle (for exercises that track both sides)
   repState: "up" | "down" | "rest"
   poseConfidence: number
   feedback: {

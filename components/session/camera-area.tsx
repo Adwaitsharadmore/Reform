@@ -66,6 +66,13 @@ export function CameraArea() {
   // Very small smoothing buffer for body angle
   const angleBufRef = useRef<number[]>([])
   
+  // For tracking both sides (e.g., shoulder raises)
+  const leftAngleBufRef = useRef<number[]>([])
+  const rightAngleBufRef = useRef<number[]>([])
+  const leftAngleHistoryRef = useRef<number[]>([]) // Track angle history to determine movement range
+  const rightAngleHistoryRef = useRef<number[]>([])
+  const activeSideRef = useRef<"left" | "right" | null>(null) // Which side is currently being tracked
+  
   // Store current pose config ref to avoid stale closures
   const poseConfigRef = useRef(poseConfig)
   
@@ -340,24 +347,86 @@ export function CameraArea() {
       const rightConfPoints = config.confidencePoints.slice(midPoint)
       const rightConf = rightConfPoints.reduce((sum, idx) => sum + v(idx), 0) / rightConfPoints.length
       const leftConf = leftConfPoints.reduce((sum, idx) => sum + v(idx), 0) / leftConfPoints.length
-      const useRight = rightConf >= leftConf
 
-      // Get landmarks based on config
-      const pointA = useRight ? landmarks[config.pointA.right] : landmarks[config.pointA.left]
-      const pointB = useRight ? landmarks[config.pointB.right] : landmarks[config.pointB.left]
-      const pointC = useRight ? landmarks[config.pointC.right] : landmarks[config.pointC.left]
-      const conf = useRight ? rightConf : leftConf
+      let bodyAngle: number | null = null
+      let conf: number = 0
+      let useRight: boolean = false
 
-      const rawAngle = angleABC(pointA, pointB, pointC)
-      let bodyAngle = rawAngle
+      // For exercises like shoulder raises, track both sides and use the one with more movement
+      let leftAngle: number | null = null
+      let rightAngle: number | null = null
+      
+      if (config.trackBothSides) {
+        // Calculate angles for both sides
+        const leftPointA = landmarks[config.pointA.left]
+        const leftPointB = landmarks[config.pointB.left]
+        const leftPointC = landmarks[config.pointC.left]
+        const leftRawAngle = angleABC(leftPointA, leftPointB, leftPointC)
 
-      // Smooth angle (moving average last 6 frames)
-      if (bodyAngle != null) {
-        const buf = angleBufRef.current
-        buf.push(bodyAngle)
-        if (buf.length > 6) buf.shift()
-        const avg = buf.reduce((a, b) => a + b, 0) / buf.length
-        bodyAngle = avg
+        const rightPointA = landmarks[config.pointA.right]
+        const rightPointB = landmarks[config.pointB.right]
+        const rightPointC = landmarks[config.pointC.right]
+        const rightRawAngle = angleABC(rightPointA, rightPointB, rightPointC)
+
+        // Smooth both angles
+        if (leftRawAngle != null) {
+          leftAngleBufRef.current.push(leftRawAngle)
+          if (leftAngleBufRef.current.length > 6) leftAngleBufRef.current.shift()
+          leftAngle = leftAngleBufRef.current.reduce((a, b) => a + b, 0) / leftAngleBufRef.current.length
+          leftAngleHistoryRef.current.push(leftAngle)
+          if (leftAngleHistoryRef.current.length > 30) leftAngleHistoryRef.current.shift() // Keep last 30 frames
+        }
+
+        if (rightRawAngle != null) {
+          rightAngleBufRef.current.push(rightRawAngle)
+          if (rightAngleBufRef.current.length > 6) rightAngleBufRef.current.shift()
+          rightAngle = rightAngleBufRef.current.reduce((a, b) => a + b, 0) / rightAngleBufRef.current.length
+          rightAngleHistoryRef.current.push(rightAngle)
+          if (rightAngleHistoryRef.current.length > 30) rightAngleHistoryRef.current.shift() // Keep last 30 frames
+        }
+
+        // Determine which side has more movement (greater range of motion)
+        // Calculate range of motion for each side over the history window
+        const leftRange = leftAngleHistoryRef.current.length > 0
+          ? Math.max(...leftAngleHistoryRef.current) - Math.min(...leftAngleHistoryRef.current)
+          : 0
+        const rightRange = rightAngleHistoryRef.current.length > 0
+          ? Math.max(...rightAngleHistoryRef.current) - Math.min(...rightAngleHistoryRef.current)
+          : 0
+
+        // Use the side with more movement, or fall back to confidence if ranges are similar
+        if (Math.abs(leftRange - rightRange) > 5) {
+          // Significant difference in movement - use the more active side
+          useRight = rightRange > leftRange
+          bodyAngle = useRight ? rightAngle : leftAngle
+          conf = useRight ? rightConf : leftConf
+          activeSideRef.current = useRight ? "right" : "left"
+        } else {
+          // Similar movement - use confidence to decide
+          useRight = rightConf >= leftConf
+          bodyAngle = useRight ? rightAngle : leftAngle
+          conf = useRight ? rightConf : leftConf
+          activeSideRef.current = useRight ? "right" : "left"
+        }
+      } else {
+        // Standard single-side tracking
+        useRight = rightConf >= leftConf
+        const pointA = useRight ? landmarks[config.pointA.right] : landmarks[config.pointA.left]
+        const pointB = useRight ? landmarks[config.pointB.right] : landmarks[config.pointB.left]
+        const pointC = useRight ? landmarks[config.pointC.right] : landmarks[config.pointC.left]
+        conf = useRight ? rightConf : leftConf
+
+        const rawAngle = angleABC(pointA, pointB, pointC)
+        bodyAngle = rawAngle
+
+        // Smooth angle (moving average last 6 frames)
+        if (bodyAngle != null) {
+          const buf = angleBufRef.current
+          buf.push(bodyAngle)
+          if (buf.length > 6) buf.shift()
+          const avg = buf.reduce((a, b) => a + b, 0) / buf.length
+          bodyAngle = avg
+        }
       }
 
       // Track min angle during rep
@@ -396,6 +465,8 @@ export function CameraArea() {
       // Update app state metrics (CoachingPanel can display these)
       // Use functional update to avoid stale state, and preserve lastScore if not updated
       const roundedBodyAngle = bodyAngle != null ? Math.round(bodyAngle) : 90
+      const roundedLeftAngle = leftAngle != null ? Math.round(leftAngle) : undefined
+      const roundedRightAngle = rightAngle != null ? Math.round(rightAngle) : undefined
       const poseConf = conf ?? 0
       
       // Update ref for debug info
@@ -404,6 +475,8 @@ export function CameraArea() {
       setMetrics((prev) => ({
         ...prev,
         bodyAngle: roundedBodyAngle,
+        leftBodyAngle: config.trackBothSides ? roundedLeftAngle : undefined,
+        rightBodyAngle: config.trackBothSides ? roundedRightAngle : undefined,
         repState,
         poseConfidence: poseConf,
         feedback,
@@ -435,18 +508,32 @@ export function CameraArea() {
     poseConfigRef.current = config
     repCounterRef.current = createRepCounter(config)
     
+    // Get the first exercise from the plan
+    const firstExercise = plan.exercises[0]
+    
     // reset session metrics
     repCounterRef.current.reset()
     repMinAngleRef.current = 999
     lastDownTsRef.current = null
     angleBufRef.current = []
+    leftAngleBufRef.current = []
+    rightAngleBufRef.current = []
+    leftAngleHistoryRef.current = []
+    rightAngleHistoryRef.current = []
+    activeSideRef.current = null
     currentRepCountRef.current = 0
 
     setMetrics((prev) => ({
       ...prev,
+      currentExercise: firstExercise?.exercise ?? prev.currentExercise,
+      targetReps: firstExercise?.reps ?? prev.targetReps,
+      totalSets: firstExercise?.sets ?? prev.totalSets,
+      currentSet: 1,
       repCount: 0,
       lastScore: 0,
       bodyAngle: 90,
+      leftBodyAngle: config.trackBothSides ? undefined : undefined,
+      rightBodyAngle: config.trackBothSides ? undefined : undefined,
       repState: "rest",
       poseConfidence: 0,
       feedback: {

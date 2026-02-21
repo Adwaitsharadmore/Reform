@@ -150,29 +150,64 @@ export function CoachingPanel() {
           <Separator />
 
           {/* Metrics */}
-          <div className="grid grid-cols-3 gap-3">
-            <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
-              <Target className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">{plan.injuryArea} Angle</span>
-              <span className="font-mono text-sm font-semibold text-foreground">
-                {metrics.bodyAngle}&deg;
-              </span>
+          {plan.injuryArea === "Shoulder" && (metrics.leftBodyAngle != null || metrics.rightBodyAngle != null) ? (
+            // Show both shoulder angles separately for shoulder exercises
+            <div className="grid grid-cols-4 gap-2">
+              <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
+                <Target className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Left</span>
+                <span className="font-mono text-sm font-semibold text-foreground">
+                  {metrics.leftBodyAngle != null ? `${metrics.leftBodyAngle}°` : '--'}
+                </span>
+              </div>
+              <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
+                <Target className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Right</span>
+                <span className="font-mono text-sm font-semibold text-foreground">
+                  {metrics.rightBodyAngle != null ? `${metrics.rightBodyAngle}°` : '--'}
+                </span>
+              </div>
+              <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
+                <Zap className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">State</span>
+                <span className="font-mono text-sm font-semibold capitalize text-foreground">
+                  {metrics.repState}
+                </span>
+              </div>
+              <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
+                <Gauge className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Conf</span>
+                <span className="font-mono text-sm font-semibold text-foreground">
+                  {(metrics.poseConfidence * 100).toFixed(0)}%
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
-              <Zap className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Rep State</span>
-              <span className="font-mono text-sm font-semibold capitalize text-foreground">
-                {metrics.repState}
-              </span>
+          ) : (
+            // Standard single angle display
+            <div className="grid grid-cols-3 gap-3">
+              <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
+                <Target className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">{plan.injuryArea} Angle</span>
+                <span className="font-mono text-sm font-semibold text-foreground">
+                  {metrics.bodyAngle}&deg;
+                </span>
+              </div>
+              <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
+                <Zap className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Rep State</span>
+                <span className="font-mono text-sm font-semibold capitalize text-foreground">
+                  {metrics.repState}
+                </span>
+              </div>
+              <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
+                <Gauge className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Confidence</span>
+                <span className="font-mono text-sm font-semibold text-foreground">
+                  {(metrics.poseConfidence * 100).toFixed(0)}%
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
-              <Gauge className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Confidence</span>
-              <span className="font-mono text-sm font-semibold text-foreground">
-                {(metrics.poseConfidence * 100).toFixed(0)}%
-              </span>
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 

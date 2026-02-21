@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
+import { useState, useEffect, type ReactNode } from "react"
 import type { Plan, SessionMetrics, SessionResult } from "@/lib/types"
 import {
   AppContext,
@@ -14,6 +14,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [metrics, setMetrics] = useState<SessionMetrics>(DEFAULT_METRICS)
   const [sessionResult, setSessionResult] = useState<SessionResult>(DEFAULT_RESULT)
   const [sessionActive, setSessionActive] = useState(false)
+
+  // Sync metrics with plan when plan changes (update current exercise from plan)
+  useEffect(() => {
+    if (plan.exercises.length > 0) {
+      const firstExercise = plan.exercises[0]
+      setMetrics((prev) => ({
+        ...prev,
+        currentExercise: firstExercise.exercise,
+        targetReps: firstExercise.reps,
+        totalSets: firstExercise.sets,
+        currentSet: 1,
+      }))
+    }
+  }, [plan])
 
   return (
     <AppContext.Provider
