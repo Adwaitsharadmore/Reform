@@ -269,31 +269,6 @@ export function PlanForm() {
       </Card>
 
       {/* Safety */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Safety</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <Label>Pain Threshold</Label>
-              <span className="text-sm font-medium text-primary">
-                {plan.painThreshold}/10
-              </span>
-            </div>
-            <Slider
-              value={[plan.painThreshold]}
-              onValueChange={([v]) => updateField("painThreshold", v)}
-              min={1}
-              max={10}
-              step={1}
-            />
-            <p className="text-xs text-muted-foreground">
-              Session will pause if reported pain exceeds this level.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }

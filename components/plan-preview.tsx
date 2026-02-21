@@ -86,13 +86,6 @@ export function PlanPreview() {
               </span>
             </div>
           )}
-
-          <div className="flex items-center gap-2">
-            <Shield className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">
-              Pain threshold: {plan.painThreshold}/10
-            </span>
-          </div>
         </CardContent>
       </Card>
 
