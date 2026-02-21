@@ -37,6 +37,9 @@ export const DEFAULT_METRICS: SessionMetrics = {
 }
 
 export const DEFAULT_RESULT: SessionResult = {
+  sessionId: "default",
+  startedAt: Date.now() - 1245,
+  endedAt: Date.now(),
   totalReps: 34,
   avgScore: 82,
   bestScore: 96,
@@ -52,7 +55,7 @@ export interface AppState {
   plan: Plan
   setPlan: (plan: Plan) => void
   metrics: SessionMetrics
-  setMetrics: (metrics: SessionMetrics) => void
+  setMetrics: (metrics: SessionMetrics | ((prev: SessionMetrics) => SessionMetrics)) => void
   sessionResult: SessionResult
   setSessionResult: (result: SessionResult) => void
   sessionActive: boolean
@@ -66,3 +69,19 @@ export function useAppState() {
   if (!ctx) throw new Error("useAppState must be used within AppProvider")
   return ctx
 }
+
+
+export const db = {
+  plan: null as Plan | null,
+  session: {
+    id: null as string | null,
+    planId: null as string | null,
+    status: "idle" as "idle" | "running" | "paused" | "ended",
+    startedAt: 0,
+    repCount: 0,
+    lastRepScore: null as number | null,
+    scores: [] as number[],
+    lastMetrics: null as SessionMetrics | null,
+    result: null as SessionResult | null,
+  },
+};

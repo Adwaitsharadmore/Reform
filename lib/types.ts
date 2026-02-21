@@ -51,10 +51,14 @@ export interface SessionMetrics {
 }
 
 export interface SessionResult {
+  sessionId: string
+  planId?: string
+  startedAt: number
+  endedAt: number
   totalReps: number
   avgScore: number
   bestScore: number
   mainTip: string
-  exercises: ExerciseResult[]
+  exercises?: ExerciseResult[]
   duration: number
 }
