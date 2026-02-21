@@ -41,7 +41,7 @@ export interface SessionMetrics {
   repCount: number
   targetReps: number
   lastScore: number
-  kneeAngle: number
+  bodyAngle: number // Generic body angle (replaces kneeAngle for different injury areas)
   repState: "up" | "down" | "rest"
   poseConfidence: number
   feedback: {

@@ -16,6 +16,7 @@ import {
   Plus,
 } from "lucide-react"
 import type { SessionMetrics } from "@/lib/types"
+import { getPoseConfig } from "@/lib/pose/config"
 
 function simulateRep(
   metrics: SessionMetrics,
@@ -46,7 +47,7 @@ function simulateRep(
   return {
     repCount,
     lastScore,
-    kneeAngle: type === "shallow" ? 120 : type === "knee-cave" ? 85 : 90,
+    bodyAngle: type === "shallow" ? 120 : type === "knee-cave" ? 85 : 90,
     repState: "down",
     poseConfidence: type === "good" ? 0.97 : 0.88,
     feedback: { status: statusMap[type], checks },
@@ -55,6 +56,7 @@ function simulateRep(
 
 export function CoachingPanel() {
   const { metrics, setMetrics, sessionActive, plan } = useAppState()
+  const poseConfig = getPoseConfig(plan.injuryArea)
 
   function applySimulation(type: "good" | "shallow" | "fast" | "knee-cave") {
     const updates = simulateRep(metrics, type)
@@ -151,9 +153,9 @@ export function CoachingPanel() {
           <div className="grid grid-cols-3 gap-3">
             <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">
               <Target className="mb-1 h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Knee Angle</span>
+              <span className="text-xs text-muted-foreground">{plan.injuryArea} Angle</span>
               <span className="font-mono text-sm font-semibold text-foreground">
-                {metrics.kneeAngle}&deg;
+                {metrics.bodyAngle}&deg;
               </span>
             </div>
             <div className="flex flex-col items-center rounded-md bg-muted/50 px-2 py-2">

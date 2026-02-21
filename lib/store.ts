@@ -5,7 +5,7 @@ import type { Plan, SessionMetrics, SessionResult } from "./types"
 
 export const DEFAULT_PLAN: Plan = {
   name: "My PT Plan",
-  injuryArea: "Knee",
+  injuryArea: "Knee", // Default, but will be overridden by user input
   exercises: [
     { exercise: "Squat", sets: 3, reps: 10, tempo: "Normal", notes: "" },
     { exercise: "Lunge", sets: 2, reps: 12, tempo: "Slow", notes: "Keep torso upright" },
@@ -23,7 +23,7 @@ export const DEFAULT_METRICS: SessionMetrics = {
   repCount: 0,
   targetReps: 10,
   lastScore: 0,
-  kneeAngle: 90,
+  bodyAngle: 90,
   repState: "rest",
   poseConfidence: 0.95,
   feedback: {
@@ -31,7 +31,7 @@ export const DEFAULT_METRICS: SessionMetrics = {
     checks: [
       { label: "Depth", ok: true },
       { label: "Control", ok: true },
-      { label: "Knee alignment", ok: true },
+      { label: "Alignment", ok: true },
     ],
   },
 }

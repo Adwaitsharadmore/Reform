@@ -19,20 +19,18 @@ import {
 import { createPoseLandmarker } from "@/lib/pose/poseEngine"
 import { angleABC } from "@/lib/pose/angles"
 import { createRepCounter } from "@/lib/pose/repCounter"
-
-const RIGHT_HIP = 24
-const RIGHT_KNEE = 26
-const RIGHT_ANKLE = 28
-const LEFT_HIP = 23
-const LEFT_KNEE = 25
-const LEFT_ANKLE = 27
+import { getPoseConfig, LANDMARKS } from "@/lib/pose/config"
+import { scoreRep } from "@/lib/pose/feedback"
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x))
 }
 
 export function CameraArea() {
-  const { sessionActive, setSessionActive, metrics, setMetrics } = useAppState()
+  const { sessionActive, setSessionActive, metrics, setMetrics, plan } = useAppState()
+  
+  // Get pose configuration based on user's injury area
+  const poseConfig = getPoseConfig(plan.injuryArea)
 
   const [showSkeleton, setShowSkeleton] = useState(true)
   const [mirrorCamera, setMirrorCamera] = useState(false)
@@ -41,7 +39,7 @@ export function CameraArea() {
   const [debugInfo, setDebugInfo] = useState<{
     landmarksPresent: boolean
     poseConfidence: number
-    kneeAngle: number
+    bodyAngle: number
     repState: string
     repCount: number
   } | null>(null)
@@ -59,14 +57,26 @@ export function CameraArea() {
   const sessionActiveRef = useRef<boolean>(false)
   const consoleFilterInstalledRef = useRef<boolean>(false)
 
-  // Rep counter + rep scoring
-  const repCounterRef = useRef(createRepCounter())
+  // Rep counter + rep scoring (will be initialized with config in handleStart)
+  const repCounterRef = useRef<ReturnType<typeof createRepCounter> | null>(null)
   const repMinAngleRef = useRef<number>(999)
   const lastDownTsRef = useRef<number | null>(null)
   const currentRepCountRef = useRef<number>(0)
 
-  // Very small smoothing buffer for knee angle
+  // Very small smoothing buffer for body angle
   const angleBufRef = useRef<number[]>([])
+  
+  // Store current pose config ref to avoid stale closures
+  const poseConfigRef = useRef(poseConfig)
+  
+  // Update pose config ref when plan changes
+  useEffect(() => {
+    poseConfigRef.current = getPoseConfig(plan.injuryArea)
+    // Reinitialize rep counter with new config if it exists
+    if (repCounterRef.current) {
+      repCounterRef.current = createRepCounter(poseConfigRef.current)
+    }
+  }, [plan.injuryArea])
 
   // Keep sessionActiveRef in sync with sessionActive state
   useEffect(() => {
@@ -195,15 +205,16 @@ export function CameraArea() {
       ctx.fill()
     }
 
-    // quick leg lines (hip->knee->ankle)
-    const legPairs = [
-      [LEFT_HIP, LEFT_KNEE],
-      [LEFT_KNEE, LEFT_ANKLE],
-      [RIGHT_HIP, RIGHT_KNEE],
-      [RIGHT_KNEE, RIGHT_ANKLE],
+    // Draw connections based on current pose config
+    const config = poseConfigRef.current
+    const connections = [
+      [config.pointA.left, config.pointB.left],
+      [config.pointB.left, config.pointC.left],
+      [config.pointA.right, config.pointB.right],
+      [config.pointB.right, config.pointC.right],
     ] as const
 
-    for (const [a, b] of legPairs) {
+    for (const [a, b] of connections) {
       if ((pts[a]?.v ?? 0) < 0.5 || (pts[b]?.v ?? 0) < 0.5) continue
       ctx.beginPath()
       ctx.moveTo(pts[a].x, pts[a].y)
@@ -214,49 +225,36 @@ export function CameraArea() {
     ctx.globalAlpha = 1
   }
 
-  function computeFeedback(kneeAngle: number | null, conf: number | null): { status: "Good form" | "Needs work" | "Watch form"; checks: { label: string; ok: boolean }[] } {
-    if (kneeAngle == null || conf == null || conf < 0.5) {
+  function computeFeedback(bodyAngle: number | null, conf: number | null): { status: "Good form" | "Needs work" | "Watch form"; checks: { label: string; ok: boolean }[] } {
+    const config = poseConfigRef.current
+    if (bodyAngle == null || conf == null || conf < 0.5) {
       return {
         status: "Watch form",
         checks: [
-          { label: "Depth", ok: false },
+          { label: config.depthLabel, ok: false },
           { label: "Control", ok: false },
-          { label: "Knee alignment", ok: false },
+          { label: config.alignmentLabel, ok: false },
         ],
       }
     }
-    if (kneeAngle > 125) {
+    if (bodyAngle > config.shallowAngle) {
       return {
         status: "Needs work",
         checks: [
-          { label: "Depth", ok: false },
+          { label: config.depthLabel, ok: false },
           { label: "Control", ok: true },
-          { label: "Knee alignment", ok: true },
+          { label: config.alignmentLabel, ok: true },
         ],
       }
     }
     return {
       status: "Good form",
       checks: [
-        { label: "Depth", ok: true },
+        { label: config.depthLabel, ok: true },
         { label: "Control", ok: true },
-        { label: "Knee alignment", ok: true },
+        { label: config.alignmentLabel, ok: true },
       ],
     }
-  }
-
-  function scoreRep(minKneeAngle: number, repDurationMs: number | null) {
-    // Simple + demo-friendly scoring
-    let score = 100
-
-    // depth
-    if (minKneeAngle > 130) score -= 40
-    else if (minKneeAngle > 115) score -= 20
-
-    // speed (optional)
-    if (repDurationMs != null && repDurationMs < 900) score -= 20
-
-    return Math.max(0, Math.min(100, score))
   }
 
   async function startPoseLoop() {
@@ -299,27 +297,28 @@ export function CameraArea() {
       }
 
       const landmarks = res?.landmarks?.[0]
-      if (!landmarks) {
-        console.log("No landmarks this frame")
+      if (!landmarks || !repCounterRef.current) {
+        console.log("No landmarks this frame or rep counter not initialized")
+        const config = poseConfigRef.current
         // Update debug info separately (not inside setMetrics to avoid React error)
         setDebugInfo({
           landmarksPresent: false,
           poseConfidence: 0,
-          kneeAngle: 90,
+          bodyAngle: 90,
           repState: "rest",
           repCount: currentRepCountRef.current,
         })
         setMetrics((prev) => ({
           ...prev,
-          kneeAngle: 90,
+          bodyAngle: 90,
           repState: "rest",
           poseConfidence: 0,
           feedback: {
             status: "Watch form",
             checks: [
-              { label: "Depth", ok: false },
+              { label: config.depthLabel, ok: false },
               { label: "Control", ok: false },
-              { label: "Knee alignment", ok: false },
+              { label: config.alignmentLabel, ok: false },
             ],
           },
         }))
@@ -331,36 +330,43 @@ export function CameraArea() {
 
       console.log("Landmarks ✅")
 
-      // pose confidence proxy: average visibility of key leg points
+      const config = poseConfigRef.current
+      
+      // pose confidence proxy: average visibility of key points for this injury area
       const v = (i: number) => clamp01(landmarks[i]?.visibility ?? 0)
-      const rightConf = (v(RIGHT_HIP) + v(RIGHT_KNEE) + v(RIGHT_ANKLE)) / 3
-      const leftConf = (v(LEFT_HIP) + v(LEFT_KNEE) + v(LEFT_ANKLE)) / 3
+      // confidencePoints array has left points first, then right points
+      const midPoint = config.confidencePoints.length / 2
+      const leftConfPoints = config.confidencePoints.slice(0, midPoint)
+      const rightConfPoints = config.confidencePoints.slice(midPoint)
+      const rightConf = rightConfPoints.reduce((sum, idx) => sum + v(idx), 0) / rightConfPoints.length
+      const leftConf = leftConfPoints.reduce((sum, idx) => sum + v(idx), 0) / leftConfPoints.length
       const useRight = rightConf >= leftConf
 
-      const hip = useRight ? landmarks[RIGHT_HIP] : landmarks[LEFT_HIP]
-      const knee = useRight ? landmarks[RIGHT_KNEE] : landmarks[LEFT_KNEE]
-      const ankle = useRight ? landmarks[RIGHT_ANKLE] : landmarks[LEFT_ANKLE]
+      // Get landmarks based on config
+      const pointA = useRight ? landmarks[config.pointA.right] : landmarks[config.pointA.left]
+      const pointB = useRight ? landmarks[config.pointB.right] : landmarks[config.pointB.left]
+      const pointC = useRight ? landmarks[config.pointC.right] : landmarks[config.pointC.left]
       const conf = useRight ? rightConf : leftConf
 
-      const rawAngle = angleABC(hip, knee, ankle)
-      let kneeAngle = rawAngle
+      const rawAngle = angleABC(pointA, pointB, pointC)
+      let bodyAngle = rawAngle
 
       // Smooth angle (moving average last 6 frames)
-      if (kneeAngle != null) {
+      if (bodyAngle != null) {
         const buf = angleBufRef.current
-        buf.push(kneeAngle)
+        buf.push(bodyAngle)
         if (buf.length > 6) buf.shift()
         const avg = buf.reduce((a, b) => a + b, 0) / buf.length
-        kneeAngle = avg
+        bodyAngle = avg
       }
 
       // Track min angle during rep
-      if (kneeAngle != null) {
-        repMinAngleRef.current = Math.min(repMinAngleRef.current, kneeAngle)
+      if (bodyAngle != null) {
+        repMinAngleRef.current = Math.min(repMinAngleRef.current, bodyAngle)
       }
 
       // Rep counting
-      const { repCount, state, repJustCounted } = repCounterRef.current.update(kneeAngle)
+      const { repCount, state, repJustCounted } = repCounterRef.current.update(bodyAngle)
 
       // Convert RepState to SessionMetrics repState format
       const repState: "up" | "down" | "rest" = state === "UP" ? "up" : state === "DOWN" ? "down" : "rest"
@@ -372,24 +378,24 @@ export function CameraArea() {
       }
 
       if (repJustCounted) {
-        const minAngle = repMinAngleRef.current === 999 ? (kneeAngle ?? 999) : repMinAngleRef.current
+        const minAngle = repMinAngleRef.current === 999 ? (bodyAngle ?? 999) : repMinAngleRef.current
         const downTs = lastDownTsRef.current
         const repDuration = downTs ? Date.now() - downTs : null
-        lastScore = scoreRep(minAngle, repDuration)
+        lastScore = scoreRep(minAngle, config) + (repDuration != null && repDuration < 900 ? -20 : 0)
 
         // reset trackers for next rep
         repMinAngleRef.current = 999
         lastDownTsRef.current = null
       }
 
-      const feedback = computeFeedback(kneeAngle, conf)
+      const feedback = computeFeedback(bodyAngle, conf)
 
       // Draw skeleton overlay
       drawSkeleton(landmarks, w, h)
 
       // Update app state metrics (CoachingPanel can display these)
       // Use functional update to avoid stale state, and preserve lastScore if not updated
-      const roundedKneeAngle = kneeAngle != null ? Math.round(kneeAngle) : 90
+      const roundedBodyAngle = bodyAngle != null ? Math.round(bodyAngle) : 90
       const poseConf = conf ?? 0
       
       // Update ref for debug info
@@ -397,7 +403,7 @@ export function CameraArea() {
       
       setMetrics((prev) => ({
         ...prev,
-        kneeAngle: roundedKneeAngle,
+        bodyAngle: roundedBodyAngle,
         repState,
         poseConfidence: poseConf,
         feedback,
@@ -409,7 +415,7 @@ export function CameraArea() {
       setDebugInfo({
         landmarksPresent: true,
         poseConfidence: poseConf,
-        kneeAngle: roundedKneeAngle,
+        bodyAngle: roundedBodyAngle,
         repState,
         repCount,
       })
@@ -424,6 +430,11 @@ export function CameraArea() {
     setSessionActive(true)
     setShowTip(false)
 
+    // Initialize rep counter with current pose config
+    const config = getPoseConfig(plan.injuryArea)
+    poseConfigRef.current = config
+    repCounterRef.current = createRepCounter(config)
+    
     // reset session metrics
     repCounterRef.current.reset()
     repMinAngleRef.current = 999
@@ -435,15 +446,15 @@ export function CameraArea() {
       ...prev,
       repCount: 0,
       lastScore: 0,
-      kneeAngle: 90,
+      bodyAngle: 90,
       repState: "rest",
       poseConfidence: 0,
       feedback: {
         status: "Watch form",
         checks: [
-          { label: "Depth", ok: false },
+          { label: config.depthLabel, ok: false },
           { label: "Control", ok: false },
-          { label: "Knee alignment", ok: false },
+          { label: config.alignmentLabel, ok: false },
         ],
       },
     }))
@@ -521,7 +532,7 @@ export function CameraArea() {
                   Landmarks: {debugInfo.landmarksPresent ? "✅" : "❌"}
                 </div>
                 <div>Conf: {(debugInfo.poseConfidence * 100).toFixed(0)}%</div>
-                <div>Knee: {debugInfo.kneeAngle}°</div>
+                <div>Angle: {debugInfo.bodyAngle}°</div>
                 <div>State: {debugInfo.repState}</div>
                 <div>Reps: {debugInfo.repCount}</div>
               </div>

@@ -15,8 +15,8 @@ export async function GET() {
       let lastRepScore: number | null = null;
 
       const interval = setInterval(async () => {
-        // Mock behavior: slowly vary knee angle
-        const kneeAngle = repState === "up" ? rand(160, 175) : rand(80, 105);
+        // Mock behavior: slowly vary body angle
+        const bodyAngle = repState === "up" ? rand(160, 175) : rand(80, 105);
 
         // Occasionally simulate a rep by toggling state
         if (Math.random() < 0.12) {
@@ -28,7 +28,7 @@ export async function GET() {
         }
 
         // Pick feedback based on score/angle (mock)
-        let feedback: SessionMetrics["feedback"] = { status: "Good form", checks: [{ label: "Depth", ok: true }, { label: "Control", ok: true }, { label: "Knee alignment", ok: true }] };
+        let feedback: SessionMetrics["feedback"] = { status: "Good form", checks: [{ label: "Depth", ok: true }, { label: "Control", ok: true }, { label: "Alignment", ok: true }] };
         if (lastRepScore !== null && lastRepScore < 75) feedback = { status: "Needs work", checks: [{ label: "Depth", ok: false }] };
         if (Math.random() < 0.05) feedback = { status: "Watch form", checks: [{ label: "Control", ok: false }] };
 
@@ -37,7 +37,7 @@ export async function GET() {
           currentSet: 1,
           totalSets: 3,
           targetReps: 10,
-          kneeAngle: Math.round(kneeAngle),
+          bodyAngle: Math.round(bodyAngle),
           repState,
           poseConfidence: Math.round(rand(70, 98)) / 100,
           feedback,

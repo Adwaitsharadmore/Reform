@@ -1,26 +1,28 @@
+import type { PoseConfig } from "./config"
+
 export type RepState = "UP" | "DOWN" | "UNKNOWN";
 
-export function createRepCounter() {
+export function createRepCounter(config: PoseConfig) {
   let state: RepState = "UP";
   let downReached = false;
   let repCount = 0;
 
-  const UP_THRESH = 165;
-  const DOWN_THRESH = 100;
+  const UP_THRESH = config.upThreshold;
+  const DOWN_THRESH = config.downThreshold;
 
   return {
-    update(kneeAngle: number | null) {
+    update(bodyAngle: number | null) {
       let repJustCounted = false;
-      if (kneeAngle == null) return { repCount, state, repJustCounted };
+      if (bodyAngle == null) return { repCount, state, repJustCounted };
 
-      if (kneeAngle > UP_THRESH) {
+      if (bodyAngle > UP_THRESH) {
         state = "UP";
         if (downReached) {
           repCount += 1;
           repJustCounted = true;
           downReached = false;
         }
-      } else if (kneeAngle < DOWN_THRESH) {
+      } else if (bodyAngle < DOWN_THRESH) {
         state = "DOWN";
         downReached = true;
       }
