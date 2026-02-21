@@ -41,14 +41,9 @@ export interface CoachingInstructions {
   setup: string[]               // setup cues shown before/at start
   // Deterministic rep script (primary instruction system)
   repScript?: {
-    up: string                  // instruction while moving up
-    down: string                // instruction while moving down
-    holdTop?: string            // instruction during top hold
-    holdBottom?: string         // instruction during bottom hold (optional)
-    rest?: string               // instruction during rest/between reps
-    holdTopTargetMs?: number    // target hold duration at top (default: 1000ms)
-    holdBottomTargetMs?: number  // target hold duration at bottom (default: 800ms)
-    restTargetMs?: number       // target rest duration (default: 500ms)
+    rest?: string               // instruction during rest/between reps (optional)
+    up: string                 // instruction while moving up (at rep state up)
+    down: string               // instruction while going back to rest (moving down)
   }
   // Phase-specific cues for dynamic coaching (kept for future use)
   cuesDown?: string[]           // cues shown when going down (eccentric)
@@ -165,10 +160,9 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
         "Keep chest up"
       ],
       repScript: {
+        rest: "Reset your posture. Feet shoulder-width, core engaged.",
         up: "Drive through your heels and rise up.",
-        down: "Hips back and down—sit into your heels.",
-        holdBottom: "Hold here for 1 second.",
-        rest: "Reset your posture. Feet shoulder-width, core engaged."
+        down: "Hips back and down—sit into your heels."
       },
       cuesDown: [
         "Hips back and down",
@@ -266,10 +260,9 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
         "Weight on mid-foot or heel"
       ],
       repScript: {
+        rest: "Reset your posture. Neutral spine, core engaged.",
         up: "Squeeze your glutes and drive your hips forward.",
-        down: "Push your hips back—hinge at the hips, not the knees.",
-        holdBottom: "Hold at the end range for 1 second.",
-        rest: "Reset your posture. Neutral spine, core engaged."
+        down: "Push your hips back—hinge at the hips, not the knees."
       },
       cuesDown: [
         "Push your hips back",
@@ -367,10 +360,9 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
         "Wrists stacked over elbows"
       ],
       repScript: {
+        rest: "Reset your position. Core engaged, wrists over elbows.",
         up: "Press straight up—drive through your shoulders.",
-        down: "Lower with control—keep your core tight.",
-        holdTop: "Hold at the top for 1 second.",
-        rest: "Reset your position. Core engaged, wrists over elbows."
+        down: "Lower with control—keep your core tight."
       },
       cuesDown: [
         "Lower with control",
@@ -467,9 +459,7 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
       ],
       repScript: {
         up: "Rise up onto your toes—squeeze your calves.",
-        down: "Lower slowly—feel the stretch in your calves.",
-        holdTop: "Hold at the top for 1 second.",
-        rest: "Return to flat feet. Reset your balance and posture."
+        down: "Lower slowly—feel the stretch in your calves."
       },
       cuesDown: [
         "Lower with control",
@@ -555,10 +545,9 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
         "Core engaged"
       ],
       repScript: {
+        rest: "Reset your position. Tall posture, core engaged.",
         up: "Push through your front heel and drive back up.",
-        down: "Lower your back knee down—keep your front knee over your ankle.",
-        holdBottom: "Hold at the bottom for 1 second.",
-        rest: "Reset your position. Tall posture, core engaged."
+        down: "Lower your back knee down—keep your front knee over your ankle."
       },
       cuesDown: [
         "Lower your back knee down",
@@ -622,7 +611,7 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
       pointC: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
       label: "Shoulder elevation",
       upThreshold: 80,
-      downThreshold: 45,
+      downThreshold: 25,
     },
     shallowAngle: 120,
     veryShallowAngle: 130,
@@ -643,10 +632,9 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
         "Core engaged"
       ],
       repScript: {
+        rest: "Reset your posture. Shoulders down, core engaged.",
         up: "Raise your arms out to the side to shoulder height.",
-        down: "Lower slowly—stay in control.",
-        holdTop: "Hold there for 1 second.",
-        rest: "Reset your posture. Shoulders down, core engaged."
+        down: "Lower slowly—stay in control."
       },
       cuesDown: [
         "Lower with control",
@@ -767,23 +755,18 @@ export function getCoachingMessages(
   const messages: string[] = []
   const checks = feedback.checks
 
-  // PRIMARY: Determine primary instruction from repScript using telemetry + holds
+  // PRIMARY: Determine primary instruction from repScript using telemetry
   let primaryMessage: string | undefined = undefined
   
   if (coaching.repScript) {
-    // Check holds first (they take priority over phase)
     if (telemetry) {
-      if (telemetry.holdTopMs !== null && telemetry.holdTopMs > 500 && coaching.repScript.holdTop) {
-        primaryMessage = coaching.repScript.holdTop
-      } else if (telemetry.holdBottomMs !== null && telemetry.holdBottomMs > 500 && coaching.repScript.holdBottom) {
-        primaryMessage = coaching.repScript.holdBottom
-      } else if (telemetry.phase === "UP") {
+      if (telemetry.phase === "UP") {
         primaryMessage = coaching.repScript.up
       } else if (telemetry.phase === "DOWN") {
         primaryMessage = coaching.repScript.down
       } else {
-        // REST phase or no telemetry
-        primaryMessage = coaching.repScript.rest ?? "Reset and prepare for next rep."
+        // REST phase - use rest instruction if available, otherwise use down
+        primaryMessage = coaching.repScript.rest ?? coaching.repScript.down
       }
     } else {
       // Fallback to repState if no telemetry
@@ -792,7 +775,8 @@ export function getCoachingMessages(
       } else if (repState === "down") {
         primaryMessage = coaching.repScript.down
       } else {
-        primaryMessage = coaching.repScript.rest ?? "Reset and prepare for next rep."
+        // REST state - use rest instruction if available, otherwise use down
+        primaryMessage = coaching.repScript.rest ?? coaching.repScript.down
       }
     }
   }

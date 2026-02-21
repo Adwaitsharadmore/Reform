@@ -127,9 +127,9 @@ export function CoachingPanel() {
               {metrics.feedback.status}
             </Badge>
             <div className="flex flex-col gap-1.5">
-              {metrics.feedback.checks.map((check) => (
+              {metrics.feedback.checks.map((check, index) => (
                 <div
-                  key={check.label}
+                  key={`${check.label}-${index}`}
                   className="flex items-center gap-2 text-sm"
                 >
                   {check.ok ? (

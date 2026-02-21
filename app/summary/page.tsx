@@ -39,7 +39,7 @@ export default function SummaryPage() {
 
   function handleCopy() {
     const text = [
-      `TherapEase.ai Session Summary`,
+      `Reform Session Summary`,
       `Total Reps: ${sessionResult.totalReps}`,
       `Avg Score: ${sessionResult.avgScore}/100`,
       `Best Score: ${sessionResult.bestScore}/100`,

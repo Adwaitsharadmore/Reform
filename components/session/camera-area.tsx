@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Camera, Play, Pause, Square, FlipHorizontal2, Bone } from "lucide-react"
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
@@ -39,6 +40,9 @@ export function CameraArea() {
   const [mirrorCamera, setMirrorCamera] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const [showTip, setShowTip] = useState(true)
+  const [baselineReady, setBaselineReady] = useState(false)
+  const [userConfirmedStart, setUserConfirmedStart] = useState(false)
+  const stablePoseFramesRef = useRef<number>(0) // Track stable pose frames for angle-based exercises
   const [debugInfo, setDebugInfo] = useState<{
     landmarksPresent: boolean
     poseConfidence: number
@@ -449,6 +453,20 @@ export function CameraArea() {
       const rightConfPoints = config.confidencePoints.slice(midPoint)
       const rightConf = rightConfPoints.reduce((sum, idx) => sum + v(idx), 0) / rightConfPoints.length
       const leftConf = leftConfPoints.reduce((sum, idx) => sum + v(idx), 0) / leftConfPoints.length
+      
+      // For angle-based exercises, detect baseline readiness (stable pose detection)
+      if (config.measurementType !== 'elevation' && !baselineReady && sessionActive) {
+        const conf = Math.max(leftConf, rightConf)
+        // Require stable pose confidence > 0.7 for 10 consecutive frames
+        if (conf > 0.7) {
+          stablePoseFramesRef.current += 1
+          if (stablePoseFramesRef.current >= 10) {
+            setBaselineReady(true)
+          }
+        } else {
+          stablePoseFramesRef.current = 0
+        }
+      }
 
       let bodyAngle: number | null = null
       let conf: number = 0
@@ -587,6 +605,10 @@ export function CameraArea() {
                   // Set baseline to max Y (lowest heel = rest position)
                   baselineHeelYRef.current = Math.max(...heelYSamplesRef.current)
                   elevationStateRef.current = "REST"
+                  // Mark baseline as ready
+                  if (!baselineReady) {
+                    setBaselineReady(true)
+                  }
                 }
               }
               
@@ -721,14 +743,65 @@ export function CameraArea() {
       let telemetry: import("@/lib/types").RepTelemetry | undefined
       
       if (config.measurementType === 'elevation') {
-        // For elevation exercises, use state machine state for repState
+        // For elevation exercises (calf raises), only use "up" and "down" states
+        // "up" = going up (rising onto toes)
+        // "down" = coming down or at rest (lowering from toes or flat feet)
         const elevationState = elevationStateRef.current
-        if (elevationState === "UP") {
+        
+        if (elevationState === "CALIBRATING_REST") {
+          repState = "down" // During calibration, treat as down/rest position
+        } else if (elevationState === "UP") {
           repState = "up"
-        } else if (elevationState === "REST" || elevationState === "CALIBRATING_REST") {
-          repState = "rest"
+        } else if (elevationState === "REST") {
+          // At rest position - check if actively moving up, otherwise it's "down"
+          if (currentHeelYRef.current !== null && prevHeelYRef.current !== null) {
+            const heelYDelta = currentHeelYRef.current - prevHeelYRef.current
+            // If heel Y is decreasing (negative delta), user is rising (going up)
+            if (heelYDelta < -0.0001 && velocityRef.current > STABLE_VEL_THRESHOLD) {
+              repState = "up"
+            } else {
+              repState = "down" // At rest = down position
+            }
+          } else {
+            repState = "down" // At rest = down position
+          }
+        } else if (elevationState === "MOVING") {
+          // Determine direction based on heel Y movement
+          // If currentHeelY < prevHeelY, heel is rising (going up)
+          // If currentHeelY > prevHeelY, heel is lowering (going down)
+          if (currentHeelYRef.current !== null && prevHeelYRef.current !== null) {
+            const heelYDelta = currentHeelYRef.current - prevHeelYRef.current
+            // Negative delta means heel Y decreased (heel rose, going up)
+            // Positive delta means heel Y increased (heel lowered, going down)
+            if (heelYDelta < -0.0001) { // Going up (heel rising)
+              repState = "up"
+            } else if (heelYDelta > 0.0001) { // Going down (heel lowering)
+              repState = "down"
+            } else {
+              // Very small movement, use elevation to determine
+              const elevation = elevationRef.current
+              const upThreshold = config.primaryAngle.upThreshold ?? 0.02
+              const downThreshold = config.primaryAngle.downThreshold ?? 0.005
+              if (elevation > upThreshold) {
+                repState = "up"
+              } else {
+                // At or below threshold = down position
+                repState = "down"
+              }
+            }
+          } else {
+            // Fallback: use elevation value
+            const elevation = elevationRef.current
+            const upThreshold = config.primaryAngle.upThreshold ?? 0.02
+            if (elevation > upThreshold) {
+              repState = "up"
+            } else {
+              repState = "down"
+            }
+          }
         } else {
-          repState = "down" // MOVING state
+          // Fallback
+          repState = "down"
         }
         
         // Use repCounter for rep counting based on elevation value
@@ -839,8 +912,8 @@ export function CameraArea() {
 
       const feedback = computeFeedback(bodyAngle, conf, landmarks, useRight)
 
-      // Update coaching FSM
-      if (coachingFSMRef.current) {
+      // Update coaching FSM only after user confirms start
+      if (coachingFSMRef.current && userConfirmedStart) {
         coachingFSMRef.current.update({
           telemetry,
           repJustCounted,
@@ -987,6 +1060,10 @@ export function CameraArea() {
     // Reset elevation tracking and state machine
     elevationStateRef.current = "CALIBRATING_REST"
     baselineHeelYRef.current = null
+    // Reset confirmation states
+    setBaselineReady(false)
+    setUserConfirmedStart(false)
+    stablePoseFramesRef.current = 0
     heelYSamplesRef.current = []
     currentHeelYRef.current = null
     prevHeelYRef.current = null
@@ -1157,8 +1234,31 @@ export function CameraArea() {
         </CardContent>
       </Card>
 
+      {/* Baseline Ready Confirmation Dialog */}
+      <Dialog open={sessionActive && baselineReady && !userConfirmedStart} onOpenChange={() => {}}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Ready to Start?</DialogTitle>
+            <DialogDescription>
+              Baseline measurement complete. Get into your starting position and click "Start Exercise" when you're ready to begin.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={() => {
+              setUserConfirmedStart(true)
+              // For calf raises, start with UP instruction instead of REST
+              if (metrics.currentExercise === "Calf Raise" && coachingFSMRef.current?.setInitialStep) {
+                coachingFSMRef.current.setInitialStep("UP")
+              }
+            }}>
+              Start Exercise
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Coaching Panel - Dynamic Real-time Coaching */}
-      {sessionActive && poseConfig.coaching && coachingFSMRef.current && (() => {
+      {sessionActive && userConfirmedStart && poseConfig.coaching && coachingFSMRef.current && (() => {
         // Get primary instruction from FSM (sticky until conditions met)
         const primaryMessage = coachingFSMRef.current.getPrimaryInstruction()
         

@@ -14,9 +14,9 @@ const _spaceMono = Space_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "TherapEase.ai - Physical Therapy at Home",
+  title: "Reform - Physical Therapy at Home",
   description:
-    "Do physical therapy at home with real-time form feedback. TherapEase.ai helps you perform PT exercises correctly using computer vision.",
+    "Do physical therapy at home with real-time form feedback. Reform helps you perform PT exercises correctly using computer vision.",
   icons: {
     icon: [
       { url: "/icon-light-32x32.png", media: "(prefers-color-scheme: light)" },

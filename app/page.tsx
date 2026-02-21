@@ -72,7 +72,7 @@ export default function LandingPage() {
             <span className="text-primary">{" "}With Real-Time Form Feedback</span>
           </h1>
           <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground">
-            TherapEase.ai helps you perform your PT exercises correctly using
+            Reform helps you perform your PT exercises correctly using
             your camera. Get instant cues, count reps automatically, and track
             your progress over time.
           </p>

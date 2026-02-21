@@ -7,7 +7,7 @@ export function Footer() {
         <div className="flex items-center gap-2">
           <Activity className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold text-foreground">
-            TherapEase<span className="text-primary">.ai</span>
+            Reform
           </span>
         </div>
         <p className="text-xs text-muted-foreground">

@@ -1,7 +1,7 @@
 import type { PoseConfig } from "./config"
 import type { RepTelemetry } from "../types"
 
-export type CoachStep = "UP" | "HOLD_TOP" | "DOWN" | "HOLD_BOTTOM" | "REST"
+export type CoachStep = "REST" | "UP" | "DOWN"
 
 interface CoachingFSMState {
   stepIndex: number
@@ -47,18 +47,15 @@ export function createCoachingFSM(config: PoseConfig) {
   }
 
   const repScript = coaching.repScript
-  const holdTopTargetMs = repScript.holdTopTargetMs ?? 1000
-  const holdBottomTargetMs = repScript.holdBottomTargetMs ?? 800
-  const restTargetMs = repScript.restTargetMs ?? 500
 
   // Determine step sequence based on available repScript fields
+  // If no rest instruction, cycle only between UP and DOWN
   const steps: CoachStep[] = []
-  if (repScript.up) steps.push("UP")
-  if (repScript.holdTop) steps.push("HOLD_TOP")
-  if (repScript.down) steps.push("DOWN")
-  if (repScript.holdBottom) steps.push("HOLD_BOTTOM")
   if (repScript.rest) steps.push("REST")
-  // If no rest, we'll cycle back to UP after DOWN
+  if (repScript.up) steps.push("UP")
+  if (repScript.down) steps.push("DOWN")
+  // Default to UP if no steps defined
+  if (steps.length === 0) steps.push("UP")
 
   let state: CoachingFSMState = {
     stepIndex: 0,
@@ -72,7 +69,6 @@ export function createCoachingFSM(config: PoseConfig) {
 
   // Stability thresholds
   const STABLE_PHASE_MS = 200 // Require phase to be stable for 200ms
-  const HOLD_STABILITY_MS = 200 // Require hold for 200ms before accepting
 
   function reset() {
     state = {
@@ -127,116 +123,6 @@ export function createCoachingFSM(config: PoseConfig) {
 
     // State machine transitions based on current step
     switch (state.currentStep) {
-      case "UP": {
-        // Advance to HOLD_TOP when:
-        // - Phase is UP and stable for >= STABLE_PHASE_MS
-        // - OR holdTopMs >= HOLD_STABILITY_MS (proves we reached top)
-        if (
-          (currentPhase === "UP" && state.stablePhaseMs >= STABLE_PHASE_MS) ||
-          (telemetry.holdTopMs !== null && telemetry.holdTopMs >= HOLD_STABILITY_MS)
-        ) {
-          // Only advance if HOLD_TOP step exists
-          if (steps.includes("HOLD_TOP")) {
-            advanceStep()
-          } else {
-            // Skip to DOWN if no HOLD_TOP step
-            const downIndex = steps.indexOf("DOWN")
-            if (downIndex !== -1) {
-              state.stepIndex = downIndex
-              state.currentStep = "DOWN"
-              state.stepEnteredAtMs = now
-              state.stablePhaseMs = 0
-              debugLog(`Step advanced: UP -> DOWN (no HOLD_TOP step)`)
-            }
-          }
-        }
-        break
-      }
-
-      case "HOLD_TOP": {
-        // Advance to DOWN when holdTopMs >= target
-        if (telemetry.holdTopMs !== null && telemetry.holdTopMs >= holdTopTargetMs) {
-          const downIndex = steps.indexOf("DOWN")
-          if (downIndex !== -1) {
-            state.stepIndex = downIndex
-            state.currentStep = "DOWN"
-            state.stepEnteredAtMs = now
-            state.stablePhaseMs = 0
-            debugLog(`Step advanced: HOLD_TOP -> DOWN (holdTopMs: ${telemetry.holdTopMs}ms >= ${holdTopTargetMs}ms)`)
-          } else {
-            // No DOWN step, go to REST or cycle
-            advanceStep()
-          }
-        }
-        break
-      }
-
-      case "DOWN": {
-        // Advance to HOLD_BOTTOM or REST when:
-        // - Phase is DOWN and stable for >= STABLE_PHASE_MS
-        // - OR holdBottomMs >= HOLD_STABILITY_MS (proves we reached bottom)
-        if (
-          (currentPhase === "DOWN" && state.stablePhaseMs >= STABLE_PHASE_MS) ||
-          (telemetry.holdBottomMs !== null && telemetry.holdBottomMs >= HOLD_STABILITY_MS)
-        ) {
-          // Check if HOLD_BOTTOM step exists
-          if (steps.includes("HOLD_BOTTOM")) {
-            const holdBottomIndex = steps.indexOf("HOLD_BOTTOM")
-            state.stepIndex = holdBottomIndex
-            state.currentStep = "HOLD_BOTTOM"
-            state.stepEnteredAtMs = now
-            state.stablePhaseMs = 0
-            debugLog(`Step advanced: DOWN -> HOLD_BOTTOM`)
-          } else {
-            // No HOLD_BOTTOM, go to REST or cycle to UP
-            const restIndex = steps.indexOf("REST")
-            if (restIndex !== -1) {
-              state.stepIndex = restIndex
-              state.currentStep = "REST"
-              state.stepEnteredAtMs = now
-              state.stablePhaseMs = 0
-              debugLog(`Step advanced: DOWN -> REST`)
-            } else {
-              // No REST step, cycle back to UP
-              const upIndex = steps.indexOf("UP")
-              if (upIndex !== -1) {
-                state.stepIndex = upIndex
-                state.currentStep = "UP"
-                state.stepEnteredAtMs = now
-                state.stablePhaseMs = 0
-                debugLog(`Step advanced: DOWN -> UP (cycle)`)
-              }
-            }
-          }
-        }
-        break
-      }
-
-      case "HOLD_BOTTOM": {
-        // Advance to REST or UP when holdBottomMs >= target
-        if (telemetry.holdBottomMs !== null && telemetry.holdBottomMs >= holdBottomTargetMs) {
-          const restIndex = steps.indexOf("REST")
-          if (restIndex !== -1) {
-            state.stepIndex = restIndex
-            state.currentStep = "REST"
-            state.stepEnteredAtMs = now
-            state.stablePhaseMs = 0
-            debugLog(`Step advanced: HOLD_BOTTOM -> REST (holdBottomMs: ${telemetry.holdBottomMs}ms >= ${holdBottomTargetMs}ms)`)
-          } else {
-            // No REST step, cycle to UP
-            const upIndex = steps.indexOf("UP")
-            if (upIndex !== -1) {
-              state.stepIndex = upIndex
-              state.currentStep = "UP"
-              state.stepEnteredAtMs = now
-              state.stablePhaseMs = 0
-              debugLog(`Step advanced: HOLD_BOTTOM -> UP (cycle)`)
-            }
-          }
-        }
-        break
-      }
-
       case "REST": {
         // Advance to UP when phase changes away from REST (movement starts)
         if (currentPhase !== "REST" && state.stablePhaseMs >= STABLE_PHASE_MS) {
@@ -251,6 +137,57 @@ export function createCoachingFSM(config: PoseConfig) {
         }
         break
       }
+
+      case "UP": {
+        // For exercises without REST (like calf raises), hold at top for 1 second before going down
+        // Check if we've been holding at the top for at least 1 second
+        const holdTopMs = telemetry?.holdTopMs ?? null
+        const holdTopTargetMs = 1000 // 1 second hold at top
+        
+        // Only advance to DOWN after holding at top for 1 second AND phase changes to DOWN
+        if (holdTopMs !== null && holdTopMs >= holdTopTargetMs && currentPhase === "DOWN" && state.stablePhaseMs >= STABLE_PHASE_MS) {
+          const downIndex = steps.indexOf("DOWN")
+          if (downIndex !== -1) {
+            state.stepIndex = downIndex
+            state.currentStep = "DOWN"
+            state.stepEnteredAtMs = now
+            state.stablePhaseMs = 0
+            debugLog(`Step advanced: UP -> DOWN (after ${holdTopMs}ms hold)`)
+          }
+        }
+        break
+      }
+
+      case "DOWN": {
+        // If REST step exists, advance to REST when phase changes to REST
+        // Otherwise, cycle back to UP when phase changes to UP
+        if (steps.includes("REST")) {
+          if (currentPhase === "REST" && state.stablePhaseMs >= STABLE_PHASE_MS) {
+            const restIndex = steps.indexOf("REST")
+            if (restIndex !== -1) {
+              state.stepIndex = restIndex
+              state.currentStep = "REST"
+              state.stepEnteredAtMs = now
+              state.stablePhaseMs = 0
+              debugLog(`Step advanced: DOWN -> REST`)
+            }
+          }
+        } else {
+          // No REST step, cycle back to UP when phase changes to UP or REST (back to baseline)
+          // For calf raises: when user returns to baseline (REST phase), show UP instruction
+          if ((currentPhase === "UP" || currentPhase === "REST") && state.stablePhaseMs >= STABLE_PHASE_MS) {
+            const upIndex = steps.indexOf("UP")
+            if (upIndex !== -1) {
+              state.stepIndex = upIndex
+              state.currentStep = "UP"
+              state.stepEnteredAtMs = now
+              state.stablePhaseMs = 0
+              debugLog(`Step advanced: DOWN -> UP (cycle, phase: ${currentPhase})`)
+            }
+          }
+        }
+        break
+      }
     }
   }
 
@@ -259,16 +196,12 @@ export function createCoachingFSM(config: PoseConfig) {
     if (!repScript) return null
 
     switch (state.currentStep) {
-      case "UP":
-        return repScript.up ?? null
-      case "HOLD_TOP":
-        return repScript.holdTop ?? null
-      case "DOWN":
-        return repScript.down ?? null
-      case "HOLD_BOTTOM":
-        return repScript.holdBottom ?? null
       case "REST":
         return repScript.rest ?? null
+      case "UP":
+        return repScript.up ?? null
+      case "DOWN":
+        return repScript.down ?? null
       default:
         return null
     }
@@ -320,11 +253,23 @@ export function createCoachingFSM(config: PoseConfig) {
     return null
   }
 
+  function setInitialStep(step: CoachStep) {
+    const stepIndex = steps.indexOf(step)
+    if (stepIndex !== -1) {
+      state.stepIndex = stepIndex
+      state.currentStep = step
+      state.stepEnteredAtMs = performance.now()
+      state.stablePhaseMs = 0
+      debugLog(`Initial step set to: ${step}`)
+    }
+  }
+
   return {
     update,
     getPrimaryInstruction,
     getSecondaryCorrection,
     reset,
+    setInitialStep,
     // Expose state for debugging
     getState: () => ({ ...state }),
   }
