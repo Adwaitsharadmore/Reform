@@ -16,6 +16,8 @@ export const LANDMARKS = {
   RIGHT_KNEE: 26,
   LEFT_ANKLE: 27,
   RIGHT_ANKLE: 28,
+  LEFT_FOOT_INDEX: 31,
+  RIGHT_FOOT_INDEX: 32,
 } as const
 
 export interface AngleCheck {
@@ -150,28 +152,28 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
   },
   "Calf Raise": {
     primaryAngle: {
-      pointA: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
-      pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
-      pointC: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
-      label: "Heel elevation",
+      pointA: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+      pointB: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+      pointC: { left: LANDMARKS.LEFT_FOOT_INDEX, right: LANDMARKS.RIGHT_FOOT_INDEX },
+      label: "Ankle angle",
       upThreshold: 180,
       downThreshold: 170,
     },
     additionalAngles: [
       {
-        pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
-        pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
-        pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
-        label: "Knee angle",
+        pointA: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
+        pointB: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+        pointC: { left: LANDMARKS.LEFT_FOOT_INDEX, right: LANDMARKS.RIGHT_FOOT_INDEX },
+        label: "Ankle angle",
         minAngle: 160, // >160°
       },
     ],
     shallowAngle: 175,
     veryShallowAngle: 178,
     depthLabel: "Heel elevation",
-    alignmentLabel: "Knee angle",
+    alignmentLabel: "Ankle alignment",
     additionalLabels: ["Knee angle"],
-    confidencePoints: [LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE],
+    confidencePoints: [LANDMARKS.LEFT_KNEE, LANDMARKS.LEFT_ANKLE, LANDMARKS.LEFT_FOOT_INDEX, LANDMARKS.RIGHT_KNEE, LANDMARKS.RIGHT_ANKLE, LANDMARKS.RIGHT_FOOT_INDEX],
     trackBothSides: false,
   },
   Lunge: {

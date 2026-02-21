@@ -544,13 +544,15 @@ export function CameraArea() {
     setSessionActive(true)
     setShowTip(false)
 
-    // Initialize rep counter with current pose config
-    const config = getPoseConfig(plan.injuryArea)
-    poseConfigRef.current = config
-    repCounterRef.current = createRepCounter(config)
-    
     // Get the first exercise from the plan
     const firstExercise = plan.exercises[0]
+    const exerciseToUse = firstExercise?.exercise ?? metrics.currentExercise
+    
+    // Initialize rep counter with exercise-specific pose config
+    const exerciseConfig = getExerciseConfig(exerciseToUse)
+    const config = exerciseConfig || getPoseConfig(plan.injuryArea)
+    poseConfigRef.current = config
+    repCounterRef.current = createRepCounter(config)
     
     // reset session metrics
     repCounterRef.current.reset()
@@ -566,7 +568,7 @@ export function CameraArea() {
 
     setMetrics((prev) => ({
       ...prev,
-      currentExercise: firstExercise?.exercise ?? prev.currentExercise,
+      currentExercise: exerciseToUse,
       targetReps: firstExercise?.reps ?? prev.targetReps,
       totalSets: firstExercise?.sets ?? prev.totalSets,
       currentSet: 1,
