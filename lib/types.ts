@@ -34,6 +34,19 @@ export interface ExerciseResult {
   issues: string[]
 }
 
+export interface RepTelemetry {
+  phase: "DOWN" | "UP" | "REST"
+  phaseMs: number
+  lastDownMs: number | null
+  lastUpMs: number | null
+  holdBottomMs: number | null
+  holdTopMs: number | null
+  tempoStatusDown: "good" | "fast" | "slow" | null
+  tempoStatusUp: "good" | "fast" | "slow" | null
+  tempoStatusHoldBottom: "good" | "fast" | "slow" | null
+  tempoStatusHoldTop: "good" | "fast" | "slow" | null
+}
+
 export interface SessionMetrics {
   currentExercise: ExerciseType
   currentSet: number
@@ -50,6 +63,9 @@ export interface SessionMetrics {
     status: "Good form" | "Needs work" | "Watch form"
     checks: { label: string; ok: boolean }[]
   }
+  tempoStatus?: "good" | "fast" | "slow"
+  tempoMessage?: string
+  tempoTelemetry?: RepTelemetry
 }
 
 export interface SessionResult {

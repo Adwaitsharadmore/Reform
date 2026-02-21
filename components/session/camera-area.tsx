@@ -20,6 +20,7 @@ import { createPoseLandmarker } from "@/lib/pose/poseEngine"
 import { angleABC } from "@/lib/pose/angles"
 import { createRepCounter } from "@/lib/pose/repCounter"
 import { getPoseConfig, getExerciseConfig, LANDMARKS } from "@/lib/pose/config"
+import { createCoachingFSM } from "@/lib/pose/coachingFsm"
 import { scoreRep } from "@/lib/pose/feedback"
 import type { SessionMetrics } from "@/lib/types"
 
@@ -71,6 +72,7 @@ export function CameraArea() {
   const repMinAngleRef = useRef<number>(999)
   const lastDownTsRef = useRef<number | null>(null)
   const currentRepCountRef = useRef<number>(0)
+  const shouldClearTempoRef = useRef<boolean>(false)
 
   // Very small smoothing buffer for body angle
   const angleBufRef = useRef<number[]>([])
@@ -111,6 +113,9 @@ export function CameraArea() {
   // Store current pose config ref to avoid stale closures
   const poseConfigRef = useRef(poseConfig)
   
+  // Coaching FSM ref
+  const coachingFSMRef = useRef<ReturnType<typeof createCoachingFSM> | null>(null)
+  
   // Update pose config ref when exercise or plan changes
   useEffect(() => {
     const exerciseConfig = getExerciseConfig(metrics.currentExercise)
@@ -118,6 +123,10 @@ export function CameraArea() {
     // Reinitialize rep counter with new config if it exists
     if (repCounterRef.current) {
       repCounterRef.current = createRepCounter(poseConfigRef.current)
+    }
+    // Reinitialize coaching FSM with new config if it exists
+    if (coachingFSMRef.current) {
+      coachingFSMRef.current = createCoachingFSM(poseConfigRef.current)
     }
   }, [metrics.currentExercise, plan.injuryArea])
 
@@ -705,10 +714,11 @@ export function CameraArea() {
         }
       }
 
-      // Rep counting
+      // Rep counting with telemetry
       let repCount: number
       let repJustCounted: boolean
       let repState: "up" | "down" | "rest"
+      let telemetry: import("@/lib/types").RepTelemetry | undefined
       
       if (config.measurementType === 'elevation') {
         // For elevation exercises, use state machine state for repState
@@ -723,34 +733,45 @@ export function CameraArea() {
         
         // Use repCounter for rep counting based on elevation value
         // repCounter expects elevation to go UP (higher value) for "up" position
-        const { repCount: rc, state: rcState, repJustCounted: rjc } = repCounterRef.current.update(bodyAngle)
-        repCount = rc
-        repJustCounted = rjc
+        const result = repCounterRef.current.update(bodyAngle)
+        repCount = result.repCount
+        repJustCounted = result.repJustCounted
+        telemetry = result.telemetry
         
-        // Override repState with state machine state for better accuracy
-        // But keep repCounter's state for internal logic
+        // Override repState with telemetry phase if available, otherwise use state machine
+        if (telemetry) {
+          repState = telemetry.phase === "UP" ? "up" : telemetry.phase === "DOWN" ? "down" : "rest"
+        }
       } else {
-        // For angle-based exercises, use repCounter state
-        const { repCount: rc, state: rcState, repJustCounted: rjc } = repCounterRef.current.update(bodyAngle)
-        repCount = rc
-        repJustCounted = rjc
-        repState = rcState === "UP" ? "up" : rcState === "DOWN" ? "down" : "rest"
+        // For angle-based exercises, use repCounter state and telemetry
+        const result = repCounterRef.current.update(bodyAngle)
+        repCount = result.repCount
+        repJustCounted = result.repJustCounted
+        telemetry = result.telemetry
+        repState = telemetry ? (telemetry.phase === "UP" ? "up" : telemetry.phase === "DOWN" ? "down" : "rest") : (result.state === "UP" ? "up" : result.state === "DOWN" ? "down" : "rest")
       }
 
       let lastScore: number | undefined = undefined
 
       // Track when entering down/rest state for rep timing
+      // Mark that we should clear tempo status when starting a new rep
       if (config.measurementType === 'elevation') {
         const elevationState = elevationStateRef.current
         if ((elevationState === "REST" || elevationState === "MOVING") && lastDownTsRef.current == null) {
           lastDownTsRef.current = Date.now()
+          shouldClearTempoRef.current = true
         }
       } else {
         // For angle-based exercises, use repCounter state
         if (repState === "down" && lastDownTsRef.current == null) {
           lastDownTsRef.current = Date.now()
+          shouldClearTempoRef.current = true
         }
       }
+
+      // Calculate tempo status based on rep duration
+      let tempoStatus: "good" | "fast" | "slow" | undefined = undefined
+      let tempoMessage: string | undefined = undefined
 
       if (repJustCounted) {
         let valueForScoring: number
@@ -770,17 +791,65 @@ export function CameraArea() {
           valueForScoring = repMinAngleRef.current === 999 ? (bodyAngle ?? 999) : repMinAngleRef.current
         }
         const downTs = lastDownTsRef.current
-        const repDuration = downTs ? Date.now() - downTs : null
-        lastScore = scoreRep(valueForScoring, config) + (repDuration != null && repDuration < 900 ? -20 : 0)
+        const repDuration = downTs ? (Date.now() - downTs) / 1000 : null // Convert to seconds
+        lastScore = scoreRep(valueForScoring, config) + (repDuration != null && repDuration < 0.9 ? -20 : 0)
+
+        // Evaluate tempo based on rep duration and config thresholds
+        if (repDuration != null && config.minRepTime != null && config.maxRepTime != null) {
+          if (repDuration < config.minRepTime) {
+            tempoStatus = "fast"
+            tempoMessage = config.coaching?.qualityRules?.tooFastMsg || "Too fast: slow down and control the movement"
+          } else if (repDuration > config.maxRepTime) {
+            tempoStatus = "slow"
+            tempoMessage = config.coaching?.qualityRules?.tooSlowMsg || "Too slow: keep it smooth, don't stall"
+          } else {
+            tempoStatus = "good"
+            tempoMessage = "Good tempo"
+          }
+        } else if (repDuration != null && config.minRepTime != null) {
+          // Only min threshold
+          if (repDuration < config.minRepTime) {
+            tempoStatus = "fast"
+            tempoMessage = config.coaching?.qualityRules?.tooFastMsg || "Too fast: slow down and control the movement"
+          } else {
+            tempoStatus = "good"
+            tempoMessage = "Good tempo"
+          }
+        } else if (repDuration != null && config.maxRepTime != null) {
+          // Only max threshold
+          if (repDuration > config.maxRepTime) {
+            tempoStatus = "slow"
+            tempoMessage = config.coaching?.qualityRules?.tooSlowMsg || "Too slow: keep it smooth, don't stall"
+          } else {
+            tempoStatus = "good"
+            tempoMessage = "Good tempo"
+          }
+        }
 
         // reset trackers for next rep
         repMinAngleRef.current = 999
         minHeelYRef.current = null
         maxHeelYRef.current = null
         lastDownTsRef.current = null
+      } else {
+        // Clear tempo status when not in a rep completion
+        // Keep previous tempo status until next rep completes
+        // (We'll preserve it from previous metrics)
       }
 
       const feedback = computeFeedback(bodyAngle, conf, landmarks, useRight)
+
+      // Update coaching FSM
+      if (coachingFSMRef.current) {
+        coachingFSMRef.current.update({
+          telemetry,
+          repJustCounted,
+          feedback,
+          bodyAngle,
+          repState,
+          repCount,
+        })
+      }
 
       // Draw skeleton overlay
       drawSkeleton(landmarks, w, h)
@@ -804,6 +873,16 @@ export function CameraArea() {
       
       // Update React state using functional update to avoid stale closures
       setMetrics((prev) => {
+        // Clear tempo status if we just started a new rep
+        let finalTempoStatus = tempoStatus !== undefined ? tempoStatus : prev.tempoStatus
+        let finalTempoMessage = tempoMessage !== undefined ? tempoMessage : prev.tempoMessage
+        
+        if (shouldClearTempoRef.current) {
+          finalTempoStatus = undefined
+          finalTempoMessage = undefined
+          shouldClearTempoRef.current = false
+        }
+        
         const updatedMetrics: SessionMetrics = {
           ...prev,
           bodyAngle: roundedBodyAngle,
@@ -814,6 +893,9 @@ export function CameraArea() {
           feedback,
           repCount,
           lastScore: lastScore !== undefined ? lastScore : prev.lastScore,
+          tempoStatus: finalTempoStatus,
+          tempoMessage: finalTempoMessage,
+          tempoTelemetry: telemetry,
         }
         
         // Save metrics to database
@@ -887,10 +969,14 @@ export function CameraArea() {
     poseConfigRef.current = config
     repCounterRef.current = createRepCounter(config)
     
+    // Initialize coaching FSM
+    coachingFSMRef.current = createCoachingFSM(config)
+    
     // reset session metrics
     repCounterRef.current.reset()
     repMinAngleRef.current = 999
     lastDownTsRef.current = null
+    shouldClearTempoRef.current = false
     angleBufRef.current = []
     leftAngleBufRef.current = []
     rightAngleBufRef.current = []
@@ -926,6 +1012,8 @@ export function CameraArea() {
       rightBodyAngle: config.trackBothSides ? undefined : undefined,
       repState: "rest",
       poseConfidence: 0,
+      tempoStatus: undefined,
+      tempoMessage: undefined,
       feedback: {
         status: "Watch form",
         checks: [
@@ -950,6 +1038,11 @@ export function CameraArea() {
     stopLoop()
     stopCamera()
     setElapsed(0)
+    
+    // Reset coaching FSM
+    if (coachingFSMRef.current) {
+      coachingFSMRef.current.reset()
+    }
     
     // Call API to end session and get result
     try {
@@ -1063,6 +1156,131 @@ export function CameraArea() {
           )}
         </CardContent>
       </Card>
+
+      {/* Coaching Panel - Dynamic Real-time Coaching */}
+      {sessionActive && poseConfig.coaching && coachingFSMRef.current && (() => {
+        // Get primary instruction from FSM (sticky until conditions met)
+        const primaryMessage = coachingFSMRef.current.getPrimaryInstruction()
+        
+        // Get secondary correction from FSM (can update, but never replaces primary)
+        const secondaryMessage = coachingFSMRef.current.getSecondaryCorrection(
+          metrics.feedback,
+          metrics.tempoTelemetry
+        )
+        
+        // Get breathing cue for current phase (optional, small)
+        const breathingCue = poseConfig.coaching.breathing && (
+          metrics.repState === "down" ? poseConfig.coaching.breathing.down :
+          metrics.repState === "up" ? poseConfig.coaching.breathing.up :
+          poseConfig.coaching.breathing.hold
+        )
+        
+        // Determine secondary message type for styling
+        const isFormCorrection = metrics.feedback.status !== "Good form" && secondaryMessage
+        const isTempoFeedback = metrics.tempoStatus && metrics.tempoStatus !== "good" && secondaryMessage && !isFormCorrection
+
+        return (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-col gap-4">
+                <h3 className="text-base font-semibold">{poseConfig.coaching.title}</h3>
+                
+                {/* Primary Instruction - Prominently Displayed */}
+                {primaryMessage && (
+                  <div className="flex flex-col gap-2">
+                    <h4 className="text-sm font-medium text-muted-foreground">Next action</h4>
+                    <div className="rounded-lg bg-primary/10 border-2 border-primary/30 px-4 py-3">
+                      <p className="text-lg font-semibold text-foreground leading-relaxed">
+                        {primaryMessage}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Secondary Correction - At most one, smaller styling */}
+                {secondaryMessage && (
+                  <div className="flex flex-col gap-2">
+                    <div className={`rounded-md px-3 py-2 text-sm ${
+                      isFormCorrection
+                        ? "bg-destructive/10 border border-destructive/20 text-destructive"
+                        : isTempoFeedback
+                          ? "bg-warning/10 border border-warning/20 text-warning-foreground"
+                          : "bg-muted/50 text-muted-foreground"
+                    }`}>
+                      <div className="flex items-start gap-2">
+                        <span className={isFormCorrection ? "text-destructive" : isTempoFeedback ? "text-warning" : "text-muted-foreground"}>
+                          {isFormCorrection ? "⚠" : isTempoFeedback ? "⏱" : "💡"}
+                        </span>
+                        <span className="font-medium">{secondaryMessage}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Breathing cue - optional, small, only show when user pauses */}
+                {breathingCue && metrics.repState === "rest" && (
+                  <div className="flex flex-col gap-1">
+                    <div className="rounded-md bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground">
+                      {breathingCue}
+                    </div>
+                  </div>
+                )}
+
+                {/* Rep speed status - compact display */}
+                {metrics.tempoStatus && (
+                  <div className="flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2">
+                    <span className="text-xs font-medium text-muted-foreground">Tempo:</span>
+                    <span className={`text-sm font-medium ${
+                      metrics.tempoStatus === "good" 
+                        ? "text-success" 
+                        : metrics.tempoStatus === "fast"
+                          ? "text-destructive"
+                          : "text-warning"
+                    }`}>
+                      {metrics.tempoStatus === "good" ? "✓ Good" : 
+                       metrics.tempoStatus === "fast" ? "⚠ Too fast" : 
+                       "⚠ Too slow"}
+                    </span>
+                  </div>
+                )}
+
+                {/* Current phase indicator with telemetry */}
+                <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <span>Phase:</span>
+                    <Badge variant="outline" className="capitalize">
+                      {metrics.repState === "down" ? "Lowering" : 
+                       metrics.repState === "up" ? "Rising" : 
+                       "Rest"}
+                    </Badge>
+                    {metrics.tempoTelemetry && (
+                      <span className="text-xs">
+                        ({Math.round(metrics.tempoTelemetry.phaseMs / 100) / 10}s)
+                      </span>
+                    )}
+                  </div>
+                  {metrics.tempoTelemetry && (
+                    <div className="flex flex-col gap-1 text-xs">
+                      {metrics.tempoTelemetry.lastDownMs !== null && (
+                        <div>Last down: {Math.round(metrics.tempoTelemetry.lastDownMs / 100) / 10}s</div>
+                      )}
+                      {metrics.tempoTelemetry.lastUpMs !== null && (
+                        <div>Last up: {Math.round(metrics.tempoTelemetry.lastUpMs / 100) / 10}s</div>
+                      )}
+                      {metrics.tempoTelemetry.holdBottomMs !== null && metrics.tempoTelemetry.holdBottomMs > 100 && (
+                        <div>Hold bottom: {Math.round(metrics.tempoTelemetry.holdBottomMs / 100) / 10}s</div>
+                      )}
+                      {metrics.tempoTelemetry.holdTopMs !== null && metrics.tempoTelemetry.holdTopMs > 100 && (
+                        <div>Hold top: {Math.round(metrics.tempoTelemetry.holdTopMs / 100) / 10}s</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })()}
 
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3">
