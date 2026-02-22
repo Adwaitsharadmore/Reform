@@ -142,43 +142,63 @@ export default function SummaryPage() {
     { name: "Needs Work (<70)", value: sessionResult.exercises?.filter(ex => ex.avgScore < 70).length || 0 },
   ].filter(item => item.value > 0)
 
+  // Color palette for charts - using actual hex colors
+  const colors = {
+    excellent: "#10b981", // green-500
+    good: "#3b82f6", // blue-500
+    fair: "#f59e0b", // amber-500
+    poor: "#ef4444", // red-500
+    primary: "#8b5cf6", // violet-500
+    secondary: "#06b6d4", // cyan-500
+    warning: "#f59e0b", // amber-500
+    success: "#10b981", // green-500
+  }
+
   const chartConfig = {
     avgScore: {
       label: "Avg Score",
-      color: "hsl(var(--chart-1))",
+      color: colors.primary,
     },
     bestScore: {
       label: "Best Score",
-      color: "hsl(var(--chart-2))",
+      color: colors.secondary,
     },
     reps: {
       label: "Reps",
-      color: "hsl(var(--chart-3))",
+      color: colors.good,
     },
     excellent: {
       label: "Excellent (90+)",
-      color: "hsl(var(--chart-1))",
+      color: colors.excellent,
     },
     good: {
       label: "Good (80-89)",
-      color: "hsl(var(--chart-2))",
+      color: colors.good,
     },
     fair: {
       label: "Fair (70-79)",
-      color: "hsl(var(--chart-3))",
+      color: colors.fair,
     },
     needsWork: {
       label: "Needs Work (<70)",
-      color: "hsl(var(--chart-4))",
+      color: colors.poor,
     },
   }
 
   const pieChartColors = [
-    "hsl(var(--chart-1))",
-    "hsl(var(--chart-2))",
-    "hsl(var(--chart-3))",
-    "hsl(var(--chart-4))",
+    colors.excellent,
+    colors.good,
+    colors.fair,
+    colors.poor,
   ]
+
+  // Get color based on score
+  const getScoreColor = (score: number) => {
+    if (score >= 90) return colors.excellent
+    if (score >= 80) return colors.good
+    if (score >= 70) return colors.fair
+    return colors.poor
+  }
   
   // Prepare rep score over time data (line chart)
   const repScoreData = useMemo(() => {
@@ -295,24 +315,55 @@ export default function SummaryPage() {
         </div>
 
         {/* Hero Score + Narrative */}
-        <Card className="mb-6 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+        <Card className={`mb-6 border-2 ${
+          sessionResult.avgScore >= 90 
+            ? "bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 dark:from-green-950/20 dark:to-emerald-950/20 dark:border-green-800"
+            : sessionResult.avgScore >= 80
+            ? "bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200 dark:from-blue-950/20 dark:to-cyan-950/20 dark:border-blue-800"
+            : sessionResult.avgScore >= 70
+            ? "bg-gradient-to-br from-amber-50 to-yellow-50 border-amber-200 dark:from-amber-950/20 dark:to-yellow-950/20 dark:border-amber-800"
+            : "bg-gradient-to-br from-red-50 to-orange-50 border-red-200 dark:from-red-950/20 dark:to-orange-950/20 dark:border-red-800"
+        }`}>
           <CardContent className="p-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/20">
-                    <Trophy className="h-8 w-8 text-primary" />
+                  <div className={`flex h-16 w-16 items-center justify-center rounded-full ${
+                    sessionResult.avgScore >= 90 ? "bg-green-100 dark:bg-green-900/30"
+                    : sessionResult.avgScore >= 80 ? "bg-blue-100 dark:bg-blue-900/30"
+                    : sessionResult.avgScore >= 70 ? "bg-amber-100 dark:bg-amber-900/30"
+                    : "bg-red-100 dark:bg-red-900/30"
+                  }`}>
+                    <Trophy className={`h-8 w-8 ${
+                      sessionResult.avgScore >= 90 ? "text-green-600 dark:text-green-400"
+                      : sessionResult.avgScore >= 80 ? "text-blue-600 dark:text-blue-400"
+                      : sessionResult.avgScore >= 70 ? "text-amber-600 dark:text-amber-400"
+                      : "text-red-600 dark:text-red-400"
+                    }`} />
                   </div>
                   <div>
-                    <h2 className="text-4xl font-bold text-foreground">
+                    <h2 className={`text-4xl font-bold ${
+                      sessionResult.avgScore >= 90 ? "text-green-700 dark:text-green-300"
+                      : sessionResult.avgScore >= 80 ? "text-blue-700 dark:text-blue-300"
+                      : sessionResult.avgScore >= 70 ? "text-amber-700 dark:text-amber-300"
+                      : "text-red-700 dark:text-red-300"
+                    }`}>
                       {sessionResult.avgScore}/100
                     </h2>
                     <p className="text-sm text-muted-foreground">{scoreGrade}</p>
                   </div>
                 </div>
-                <p className="text-base leading-relaxed text-foreground max-w-2xl">
+                <p className="text-base leading-relaxed text-foreground max-w-2xl font-medium">
                   {insights.narrative}
                 </p>
+                {totalIssues > 0 && (
+                  <div className="mt-3 flex items-center gap-2 text-sm">
+                    <AlertCircle className="h-4 w-4 text-warning" />
+                    <span className="text-warning font-medium">
+                      {totalIssues} form issue{totalIssues !== 1 ? "s" : ""} detected - review below
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -389,7 +440,11 @@ export default function SummaryPage() {
                       cursor={false}
                       content={<ChartTooltipContent indicator="dashed" />}
                     />
-                    <Bar dataKey="avgScore" fill="var(--color-avgScore)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="avgScore" radius={[4, 4, 0, 0]}>
+                      {exerciseChartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={getScoreColor(entry.avgScore)} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ChartContainer>
               ) : (
@@ -478,10 +533,10 @@ export default function SummaryPage() {
                     <Line
                       type="monotone"
                       dataKey="score"
-                      stroke="hsl(var(--chart-1))"
+                      stroke={colors.primary}
                       strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
+                      dot={{ r: 4, fill: colors.primary }}
+                      activeDot={{ r: 6, fill: colors.primary }}
                     />
                   </LineChart>
                 </ChartContainer>
@@ -515,7 +570,7 @@ export default function SummaryPage() {
                     <RadialBar
                       dataKey="value"
                       cornerRadius={10}
-                      fill="hsl(var(--chart-1))"
+                      fill={overallTempoCompliance >= 80 ? colors.success : overallTempoCompliance >= 60 ? colors.warning : colors.poor}
                     />
                     <ChartTooltip
                       content={<ChartTooltipContent />}
@@ -558,9 +613,9 @@ export default function SummaryPage() {
                   <ChartTooltip
                     content={<ChartTooltipContent />}
                   />
-                  <Bar dataKey="Good form" stackId="a" fill="hsl(var(--chart-1))" />
-                  <Bar dataKey="Needs work" stackId="a" fill="hsl(var(--chart-3))" />
-                  <Bar dataKey="Watch form" stackId="a" fill="hsl(var(--chart-4))" />
+                  <Bar dataKey="Good form" stackId="a" fill={colors.excellent} />
+                  <Bar dataKey="Needs work" stackId="a" fill={colors.warning} />
+                  <Bar dataKey="Watch form" stackId="a" fill={colors.poor} />
                   <Legend />
                 </BarChart>
               </ChartContainer>
@@ -585,26 +640,71 @@ export default function SummaryPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">Consistency</span>
                       <div className="flex items-center gap-2">
-                        <Progress value={insight.consistencyScore} className="w-24 h-2" />
-                        <span className="text-sm font-medium">{insight.consistencyScore}%</span>
+                        <div className="relative h-2 w-24 overflow-hidden rounded-full bg-muted">
+                          <div 
+                            className={`h-full transition-all ${
+                              insight.consistencyScore >= 80 ? "bg-green-500"
+                              : insight.consistencyScore >= 60 ? "bg-amber-500"
+                              : "bg-red-500"
+                            }`}
+                            style={{ width: `${insight.consistencyScore}%` }}
+                          />
+                        </div>
+                        <span className={`text-sm font-medium ${
+                          insight.consistencyScore >= 80 ? "text-green-600 dark:text-green-400"
+                          : insight.consistencyScore >= 60 ? "text-amber-600 dark:text-amber-400"
+                          : "text-red-600 dark:text-red-400"
+                        }`}>
+                          {insight.consistencyScore}%
+                        </span>
                       </div>
                     </div>
                     
                     {/* Tempo Compliance */}
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Tempo Compliance</span>
+                      <span className="text-sm text-muted-foreground">Tempo</span>
                       <div className="flex items-center gap-2">
-                        <Progress value={insight.tempoCompliance} className="w-24 h-2" />
-                        <span className="text-sm font-medium">{insight.tempoCompliance}%</span>
+                        <div className="relative h-2 w-24 overflow-hidden rounded-full bg-muted">
+                          <div 
+                            className={`h-full transition-all ${
+                              insight.tempoCompliance >= 80 ? "bg-green-500"
+                              : insight.tempoCompliance >= 60 ? "bg-amber-500"
+                              : "bg-red-500"
+                            }`}
+                            style={{ width: `${insight.tempoCompliance}%` }}
+                          />
+                        </div>
+                        <span className={`text-sm font-medium ${
+                          insight.tempoCompliance >= 80 ? "text-green-600 dark:text-green-400"
+                          : insight.tempoCompliance >= 60 ? "text-amber-600 dark:text-amber-400"
+                          : "text-red-600 dark:text-red-400"
+                        }`}>
+                          {insight.tempoCompliance}%
+                        </span>
                       </div>
                     </div>
                     
                     {/* Form Compliance */}
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">Form Compliance</span>
+                      <span className="text-sm text-muted-foreground">Form</span>
                       <div className="flex items-center gap-2">
-                        <Progress value={insight.formCompliance} className="w-24 h-2" />
-                        <span className="text-sm font-medium">{insight.formCompliance}%</span>
+                        <div className="relative h-2 w-24 overflow-hidden rounded-full bg-muted">
+                          <div 
+                            className={`h-full transition-all ${
+                              insight.formCompliance >= 80 ? "bg-green-500"
+                              : insight.formCompliance >= 60 ? "bg-amber-500"
+                              : "bg-red-500"
+                            }`}
+                            style={{ width: `${insight.formCompliance}%` }}
+                          />
+                        </div>
+                        <span className={`text-sm font-medium ${
+                          insight.formCompliance >= 80 ? "text-green-600 dark:text-green-400"
+                          : insight.formCompliance >= 60 ? "text-amber-600 dark:text-amber-400"
+                          : "text-red-600 dark:text-red-400"
+                        }`}>
+                          {insight.formCompliance}%
+                        </span>
                       </div>
                     </div>
                     
@@ -629,11 +729,18 @@ export default function SummaryPage() {
                     
                     {/* Top Issues */}
                     {insight.topIssues.length > 0 && (
-                      <div className="pt-2 border-t">
-                        <p className="text-sm font-medium mb-2">Top Issues</p>
+                      <div className="pt-2 border-t border-red-200 dark:border-red-800">
+                        <p className="text-sm font-semibold mb-2 text-red-700 dark:text-red-300 flex items-center gap-1">
+                          <AlertCircle className="h-4 w-4" />
+                          Main Issues
+                        </p>
                         <div className="flex flex-wrap gap-1">
                           {insight.topIssues.map((issue) => (
-                            <Badge key={issue} variant="outline" className="text-xs">
+                            <Badge 
+                              key={issue} 
+                              variant="outline" 
+                              className="text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800 font-medium"
+                            >
                               {issue}
                             </Badge>
                           ))}
@@ -663,21 +770,26 @@ export default function SummaryPage() {
           </div>
         )}
 
-        {/* Next Session Focus */}
+        {/* Key Mistakes & Next Session Focus */}
         {insights.nextSessionFocus.length > 0 && (
-          <Card className="mb-6 bg-warning/5 border-warning/20">
+          <Card className="mb-6 bg-gradient-to-br from-amber-50 to-orange-50 border-2 border-amber-200 dark:from-amber-950/30 dark:to-orange-950/30 dark:border-amber-800">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5 text-warning" />
-                Next Session Focus
+              <CardTitle className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                <AlertCircle className="h-5 w-5" />
+                Key Areas to Improve
               </CardTitle>
+              <CardDescription className="text-amber-600 dark:text-amber-400">
+                Focus on these in your next session
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-2">
+              <ul className="space-y-3">
                 {insights.nextSessionFocus.map((item, index) => (
-                  <li key={index} className="flex items-start gap-2">
-                    <span className="text-warning mt-1">•</span>
-                    <span className="text-sm">{item}</span>
+                  <li key={index} className="flex items-start gap-3 p-2 rounded-lg bg-white/50 dark:bg-amber-900/20">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/50 mt-0.5">
+                      <span className="text-xs font-bold text-amber-700 dark:text-amber-300">{index + 1}</span>
+                    </div>
+                    <span className="text-sm font-medium text-foreground flex-1">{item}</span>
                   </li>
                 ))}
               </ul>
@@ -685,87 +797,72 @@ export default function SummaryPage() {
           </Card>
         )}
 
-        {/* Insights and Breakdown */}
-        <div className="mb-6 grid gap-6 lg:grid-cols-3">
+        {/* Quick Insights */}
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {/* Main Tip Card */}
-          <Card className="lg:col-span-1">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Lightbulb className="h-5 w-5 text-warning" />
-                Key Insight
+          <Card className="bg-gradient-to-br from-violet-50 to-purple-50 border-violet-200 dark:from-violet-950/20 dark:to-purple-950/20 dark:border-violet-800">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-sm">
+                <Lightbulb className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                Quick Tip
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                <p className="text-sm leading-relaxed text-foreground">
-                  {sessionResult.mainTip}
-                </p>
-                <div className="flex items-center gap-2 rounded-lg bg-warning/10 p-3">
-                  <TrendingUp className="h-4 w-4 text-warning" />
-                  <span className="text-xs font-medium text-foreground">
-                    Focus on this for your next session
-                  </span>
-                </div>
-              </div>
+              <p className="text-xs leading-relaxed text-foreground font-medium">
+                {sessionResult.mainTip}
+              </p>
             </CardContent>
           </Card>
 
-          {/* Performance Insights */}
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Award className="h-5 w-5" />
-                Performance Insights
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                    <Target className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground">
-                      Overall Performance: {scoreGrade}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Your average score of {sessionResult.avgScore}/100 indicates {scoreGrade.toLowerCase()} form throughout the session.
-                    </p>
-                  </div>
-                </div>
-                {sessionResult.bestScore >= 90 && (
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success/10">
-                      <Trophy className="h-4 w-4 text-success" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">
-                        Peak Performance Achieved
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        You reached a score of {sessionResult.bestScore}/100 - excellent work!
-                      </p>
-                    </div>
-                  </div>
-                )}
-                {totalIssues > 0 && (
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-warning/10">
-                      <AlertCircle className="h-4 w-4 text-warning" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-foreground">
-                        Areas for Improvement
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {totalIssues} form issue{totalIssues !== 1 ? "s" : ""} detected across {exercisesWithIssues} exercise{exercisesWithIssues !== 1 ? "s" : ""}. Review the breakdown below.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+          {/* Best Performance */}
+          {sessionResult.bestScore >= 90 && (
+            <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 dark:from-green-950/20 dark:to-emerald-950/20 dark:border-green-800">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Trophy className="h-4 w-4 text-green-600 dark:text-green-400" />
+                  Peak Score
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-green-700 dark:text-green-300">{sessionResult.bestScore}</p>
+                <p className="text-xs text-muted-foreground mt-1">Excellent work!</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Issues Count */}
+          {totalIssues > 0 && (
+            <Card className="bg-gradient-to-br from-red-50 to-orange-50 border-red-200 dark:from-red-950/20 dark:to-orange-950/20 dark:border-red-800">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
+                  Issues Found
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-red-700 dark:text-red-300">{totalIssues}</p>
+                <p className="text-xs text-muted-foreground mt-1">across {exercisesWithIssues} exercise{exercisesWithIssues !== 1 ? "s" : ""}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Consistency */}
+          {insights.exerciseInsights.length > 0 && (
+            <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200 dark:from-blue-950/20 dark:to-cyan-950/20 dark:border-blue-800">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Activity className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  Avg Consistency
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                  {Math.round(insights.exerciseInsights.reduce((sum, i) => sum + i.consistencyScore, 0) / insights.exerciseInsights.length)}%
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">across all exercises</p>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Breakdown table */}
@@ -811,20 +908,16 @@ export default function SummaryPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <Badge
-                              variant={
+                              variant="outline"
+                              className={`font-semibold ${
                                 ex.avgScore >= 90
-                                  ? "default"
+                                  ? "bg-green-100 text-green-700 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700"
                                   : ex.avgScore >= 80
-                                  ? "secondary"
-                                  : "outline"
-                              }
-                              className={
-                                ex.avgScore >= 90
-                                  ? "bg-success/10 text-success hover:bg-success/20"
-                                  : ex.avgScore >= 80
-                                  ? ""
-                                  : "bg-warning/10 text-warning hover:bg-warning/20"
-                              }
+                                  ? "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700"
+                                  : ex.avgScore >= 70
+                                  ? "bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
+                                  : "bg-red-100 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700"
+                              }`}
                             >
                               {ex.avgScore}/100
                             </Badge>
@@ -888,15 +981,17 @@ export default function SummaryPage() {
                                   <Badge
                                     key={issue}
                                     variant="outline"
-                                    className="text-xs"
+                                    className="text-xs bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800 font-medium"
                                   >
+                                    <AlertCircle className="h-3 w-3 mr-1 inline" />
                                     {issue}
                                   </Badge>
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-sm text-muted-foreground">
-                                None
+                              <span className="text-sm text-green-600 dark:text-green-400 font-medium flex items-center gap-1">
+                                <CheckCircle2 className="h-4 w-4" />
+                                No issues
                               </span>
                             )}
                           </TableCell>
