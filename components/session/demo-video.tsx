@@ -34,10 +34,6 @@ export function DemoVideo() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
-  // Defer isWatched to client-only to avoid SSR/client hydration mismatch
-  // (demoWatched may be rehydrated from localStorage on the client but is empty on the server)
-  const isWatched = mounted && (demoWatched[currentExercise] || false)
-
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -50,31 +46,22 @@ export function DemoVideo() {
     }
   }, [])
 
-  // Check if demo is already watched
-  useEffect(() => {
-    if (isWatched) {
-      setIsMarkedWatched(true)
-      setCanMarkWatched(true)
-    }
-  }, [isWatched])
-
-  // Reset state when exercise changes
+  // Reset state when exercise changes - always show demo video for each exercise
   useEffect(() => {
     setWatchedTime(0)
-    setIsMarkedWatched(isWatched)
-    setCanMarkWatched(isWatched)
+    setIsMarkedWatched(false)
+    setCanMarkWatched(false)
+    // Reset demoWatched for this exercise so Start button is disabled until watched again
+    setDemoWatched(currentExercise, false)
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
       intervalRef.current = null
     }
-  }, [currentExercise, isWatched])
+  }, [currentExercise, setDemoWatched])
 
   // Simple timer-based tracking (since YouTube iframe API requires more setup)
   // Start tracking when component mounts (assume user will watch)
   useEffect(() => {
-    // Don't start timer if already watched
-    if (isWatched) return
-
     // Start a timer that tracks "watch time" - this is a simple MVP approach
     // In a production app, you'd use YouTube iframe API to track actual playback
     const startTime = Date.now()
@@ -96,7 +83,7 @@ export function DemoVideo() {
         intervalRef.current = null
       }
     }
-  }, [currentExercise, isWatched])
+  }, [currentExercise])
 
   const handleMarkWatched = () => {
     setIsMarkedWatched(true)
@@ -107,21 +94,6 @@ export function DemoVideo() {
     setDemoWatched(currentExercise, true)
     setIsMarkedWatched(true)
     setCanMarkWatched(true)
-  }
-
-
-  // If already watched, show minimal UI
-  if (isWatched) {
-    return (
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-green-500" />
-            <span>Demo video watched for {currentExercise}</span>
-          </div>
-        </CardContent>
-      </Card>
-    )
   }
 
   return (
