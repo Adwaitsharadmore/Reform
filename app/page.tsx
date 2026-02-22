@@ -1,3 +1,5 @@
+"use client"
+
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -12,6 +14,7 @@ import {
   Volume2,
   Dumbbell,
 } from "lucide-react"
+import { useAuth } from "@/lib/auth-context"
 
 const features = [
   {
@@ -74,6 +77,8 @@ const steps = [
 ]
 
 export default function LandingPage() {
+  const { isAuthenticated } = useAuth()
+
   return (
     <div className="flex flex-col">
       {/* Hero */}
@@ -90,9 +95,9 @@ export default function LandingPage() {
           </p>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <Button asChild size="lg" className="gap-2">
-              <Link href="/login">
+              <Link href={isAuthenticated ? "/plan" : "/login"}>
                 <ClipboardList className="h-4 w-4" />
-                Sign In
+                {isAuthenticated ? "My Plan" : "Sign In"}
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="gap-2">
@@ -183,8 +188,8 @@ export default function LandingPage() {
               first guided session today.
             </p>
             <Button asChild size="lg" className="gap-2">
-              <Link href="/login">
-                Get Started Now
+              <Link href={isAuthenticated ? "/plan" : "/login"}>
+                {isAuthenticated ? "Go to My Plan" : "Get Started Now"}
                 <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>

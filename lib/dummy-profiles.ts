@@ -11,19 +11,18 @@ export const DUMMY_PROFILES: UserProfile[] = [
     weight: 80,
     createdAt: Date.now() - 90 * 24 * 60 * 60 * 1000, // 90 days ago
     lastActiveAt: Date.now() - 1 * 24 * 60 * 60 * 1000, // 1 day ago
-    primaryInjuryArea: "Knee",
-    injuryDescription: "ACL reconstruction recovery",
+    primaryInjuryArea: "Shoulder",
+    injuryDescription: "Rotator cuff injury recovery",
     injuryDate: Date.now() - 180 * 24 * 60 * 60 * 1000,
     painThreshold: 6,
     previousPTExperience: true,
     currentPainLevel: 3,
     plan: {
-      name: "Post-Surgery Knee Recovery",
-      injuryArea: "Knee",
+      name: "Shoulder Rehabilitation Program",
+      injuryArea: "Shoulder",
       exercises: [
-        { exercise: "Squat", sets: 3, reps: 10, tempo: "Normal", notes: "Focus on form" },
-        { exercise: "Lunge", sets: 2, reps: 12, tempo: "Slow", notes: "Avoid locking knees" },
-        { exercise: "Calf Raise", sets: 3, reps: 15, tempo: "Normal", notes: "" },
+        { exercise: "Shoulder Raise", sets: 3, reps: 12, tempo: "Slow", notes: "Control the movement" },
+        { exercise: "Shoulder Press", sets: 2, reps: 10, tempo: "Normal", notes: "Keep trunk upright" },
       ],
       daysPerWeek: 3,
       preferredDays: ["Mon", "Wed", "Fri"],
