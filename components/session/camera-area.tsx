@@ -343,8 +343,15 @@ export function CameraArea() {
           const maxAngle = config.primaryAngle.maxAngle ?? 180
           primaryOk = bodyAngle >= minAngle && bodyAngle <= maxAngle
         } else {
-          // Lower angle = better depth (default, e.g., squats)
-          primaryOk = bodyAngle <= config.shallowAngle
+          // Lower angle = better depth (default, e.g., squats, lunges)
+          // Only validate depth when in the DOWN position.
+          // When standing (up/rest), knee angle is ~170° which always fails
+          // a <=130° threshold, causing a false "Needs work".
+          if (repState === "down") {
+            primaryOk = bodyAngle <= config.shallowAngle
+          } else {
+            primaryOk = true
+          }
         }
       }
     }
@@ -352,7 +359,15 @@ export function CameraArea() {
     if (!primaryOk) hasIssues = true
 
     // Check additional angles if available
+    // For exercises with lowerBetter depth direction (squats, lunges), only check
+    // additional angles when in DOWN state, as form checks like trunk lean are only
+    // relevant during the movement phase, not when standing upright.
     if (config.additionalAngles && landmarks) {
+      const shouldCheckAdditionalAngles = 
+        config.depthDirection === 'higherBetter' || // Always check for higherBetter exercises
+        repState === "down" || // Only check during down phase for lowerBetter exercises
+        repState === undefined // If repState is not provided, check anyway (backward compatibility)
+      
       for (let i = 0; i < config.additionalAngles.length; i++) {
         const angleCheck = config.additionalAngles[i]
         const label = config.additionalLabels?.[i] || angleCheck.label
@@ -364,11 +379,16 @@ export function CameraArea() {
         const angle = angleABC(pointA, pointB, pointC)
         let ok = true
         
-        if (angle != null) {
-          if (angleCheck.minAngle !== undefined && angle < angleCheck.minAngle) ok = false
-          if (angleCheck.maxAngle !== undefined && angle > angleCheck.maxAngle) ok = false
+        if (shouldCheckAdditionalAngles) {
+          if (angle != null) {
+            if (angleCheck.minAngle !== undefined && angle < angleCheck.minAngle) ok = false
+            if (angleCheck.maxAngle !== undefined && angle > angleCheck.maxAngle) ok = false
+          } else {
+            ok = false
+          }
         } else {
-          ok = false
+          // When not in down state for lowerBetter exercises, pass the check
+          ok = true
         }
         
         checks.push({ label, ok })
