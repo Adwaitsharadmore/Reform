@@ -78,9 +78,9 @@ export default function LandingPage() {
           </p>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <Button asChild size="lg" className="gap-2">
-              <Link href="/plan">
+              <Link href="/login">
                 <ClipboardList className="h-4 w-4" />
-                Create Plan
+                Sign In
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="gap-2">
@@ -171,7 +171,7 @@ export default function LandingPage() {
               first guided session today.
             </p>
             <Button asChild size="lg" className="gap-2">
-              <Link href="/plan">
+              <Link href="/login">
                 Get Started Now
                 <ArrowRight className="h-4 w-4" />
               </Link>

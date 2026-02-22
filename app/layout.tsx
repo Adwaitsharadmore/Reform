@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next"
 import { Inter, Space_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
+import { AuthProvider } from "@/lib/auth-context"
 import { AppProvider } from "@/components/app-provider"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
@@ -41,13 +42,15 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="font-sans antialiased">
-        <AppProvider>
-          <div className="flex min-h-screen flex-col">
-            <Navbar />
-            <main className="flex-1">{children}</main>
-            <Footer />
-          </div>
-        </AppProvider>
+        <AuthProvider>
+          <AppProvider>
+            <div className="flex min-h-screen flex-col">
+              <Navbar />
+              <main className="flex-1">{children}</main>
+              <Footer />
+            </div>
+          </AppProvider>
+        </AuthProvider>
         <Analytics />
       </body>
     </html>

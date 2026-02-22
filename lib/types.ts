@@ -93,3 +93,35 @@ export interface SessionResult {
   duration: number
   repEvents?: RepEvent[] // Per-rep event data for analytics
 }
+
+export interface UserProfile {
+  id: string
+  name: string
+  email: string
+  age: number
+  gender: "Male" | "Female" | "Non-binary"
+  height: number // cm
+  weight: number // kg
+  createdAt: number // timestamp
+  lastActiveAt: number // timestamp
+  primaryInjuryArea: InjuryArea
+  injuryDescription: string
+  injuryDate: number // timestamp
+  painThreshold: number
+  previousPTExperience: boolean
+  currentPainLevel: number
+  plan: Plan
+  totalSessions: number
+  currentStreak: number
+  longestStreak: number
+  totalRepsAllTime: number
+  improvementTrend: "improving" | "stable" | "declining"
+  favoriteExercise: ExerciseType
+  mostChallengingExercise: ExerciseType
+  averageSessionDuration: number
+  complianceRate: number
+  voiceCoachEnabled: boolean
+  demoWatched: Record<string, boolean>
+  notificationsEnabled: boolean
+  preferredWorkoutTime: "Morning" | "Afternoon" | "Evening"
+}
