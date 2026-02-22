@@ -6,6 +6,16 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
+import { Slider } from "@/components/ui/slider"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   CheckCircle2,
   XCircle,
@@ -14,9 +24,13 @@ import {
   Target,
   Gauge,
   Plus,
+  Volume2,
 } from "lucide-react"
+import { useState, useEffect } from "react"
+import { toast } from "sonner"
 import type { SessionMetrics } from "@/lib/types"
 import { getPoseConfig, getExerciseConfig } from "@/lib/pose/config"
+import * as voiceCoach from "@/lib/voice/voiceCoach"
 
 function simulateRep(
   metrics: SessionMetrics,
@@ -59,6 +73,85 @@ export function CoachingPanel() {
   // Use exercise-specific config if available, otherwise fall back to injury area
   const exerciseConfig = getExerciseConfig(metrics.currentExercise)
   const poseConfig = exerciseConfig || getPoseConfig(plan.injuryArea)
+
+  // Voice Coach state
+  const [voiceEnabled, setVoiceEnabled] = useState(false)
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([])
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | null>(null)
+  const [rate, setRate] = useState<number[]>([1.0])
+  const [volume, setVolume] = useState<number[]>([1.0])
+
+  // Initialize voice coach and load settings
+  useEffect(() => {
+    voiceCoach.initVoiceCoach().then(() => {
+      const settings = voiceCoach.getSettings()
+      setVoiceEnabled(settings.enabled)
+      setSelectedVoiceURI(settings.voiceURI)
+      setRate([settings.rate])
+      setVolume([settings.volume])
+      
+      // Load voices
+      const availableVoices = voiceCoach.getVoices()
+      setVoices(availableVoices)
+      
+      // If voices are empty, try loading again after a delay (some browsers load async)
+      if (availableVoices.length === 0) {
+        setTimeout(() => {
+          const retryVoices = voiceCoach.getVoices()
+          if (retryVoices.length > 0) {
+            setVoices(retryVoices)
+          }
+        }, 500)
+      }
+    })
+  }, [])
+
+  // Sync voice enabled state
+  useEffect(() => {
+    voiceCoach.setEnabled(voiceEnabled)
+  }, [voiceEnabled])
+
+  // Sync voice selection
+  useEffect(() => {
+    voiceCoach.setVoice(selectedVoiceURI)
+  }, [selectedVoiceURI])
+
+  // Sync rate
+  useEffect(() => {
+    if (rate[0] !== undefined) {
+      voiceCoach.setRate(rate[0])
+    }
+  }, [rate])
+
+  // Sync volume
+  useEffect(() => {
+    if (volume[0] !== undefined) {
+      voiceCoach.setVolume(volume[0])
+    }
+  }, [volume])
+
+  // Handle voice toggle with autoplay check
+  function handleVoiceToggle(enabled: boolean) {
+    setVoiceEnabled(enabled)
+    if (enabled) {
+      // Try to speak a test phrase to check if autoplay is allowed
+      try {
+        voiceCoach.speak("Voice coach enabled")
+      } catch (e) {
+        // If autoplay is blocked, show toast
+        toast.info("Tap 'Enable voice' to allow audio", {
+          description: "Some browsers require user interaction to enable speech",
+        })
+      }
+    }
+  }
+
+  // Test voice function
+  function handleTestVoice() {
+    // Clear cooldown for testing
+    voiceCoach.clearCooldown()
+    voiceCoach.speak("This is a test of the voice coach system")
+  }
 
   function applySimulation(type: "good" | "shallow" | "fast" | "knee-cave") {
     const updates = simulateRep(metrics, type)
@@ -253,6 +346,105 @@ export function CoachingPanel() {
               </span>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      {/* Voice Coach */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Volume2 className="h-4 w-4 text-primary" />
+            Voice Coach
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {/* Enable toggle */}
+          <div className="flex items-center justify-between">
+            <Label htmlFor="voice-enabled" className="text-sm font-medium">
+              Enable voice coaching
+            </Label>
+            <Switch
+              id="voice-enabled"
+              checked={voiceEnabled}
+              onCheckedChange={handleVoiceToggle}
+            />
+          </div>
+
+          <Separator />
+
+          {/* Voice selection */}
+          {voices.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <Label className="text-sm font-medium">Voice</Label>
+              <Select
+                value={selectedVoiceURI || ""}
+                onValueChange={(value) => setSelectedVoiceURI(value || null)}
+                disabled={!voiceEnabled}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select voice" />
+                </SelectTrigger>
+                <SelectContent>
+                  {voices
+                    .filter((v) => v.lang.startsWith("en"))
+                    .map((voice) => (
+                      <SelectItem key={voice.voiceURI} value={voice.voiceURI}>
+                        {voice.name} ({voice.lang})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Speech rate */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Speech Rate</Label>
+              <span className="text-xs text-muted-foreground">
+                {rate[0]?.toFixed(1) || "1.0"}
+              </span>
+            </div>
+            <Slider
+              value={rate}
+              onValueChange={setRate}
+              min={0.8}
+              max={1.2}
+              step={0.1}
+              disabled={!voiceEnabled}
+              className="w-full"
+            />
+          </div>
+
+          {/* Volume */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Volume</Label>
+              <span className="text-xs text-muted-foreground">
+                {Math.round((volume[0] || 1.0) * 100)}%
+              </span>
+            </div>
+            <Slider
+              value={volume}
+              onValueChange={setVolume}
+              min={0}
+              max={1}
+              step={0.1}
+              disabled={!voiceEnabled}
+              className="w-full"
+            />
+          </div>
+
+          {/* Test button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleTestVoice}
+            disabled={!voiceEnabled}
+            className="w-full"
+          >
+            Test Voice
+          </Button>
         </CardContent>
       </Card>
 

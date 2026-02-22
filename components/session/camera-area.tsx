@@ -24,6 +24,7 @@ import { getPoseConfig, getExerciseConfig, LANDMARKS } from "@/lib/pose/config"
 import { createCoachingFSM } from "@/lib/pose/coachingFsm"
 import { scoreRep } from "@/lib/pose/feedback"
 import type { SessionMetrics } from "@/lib/types"
+import * as voiceCoach from "@/lib/voice/voiceCoach"
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x))
@@ -1182,6 +1183,7 @@ export function CameraArea() {
   function handlePause() {
     setSessionActive(false)
     stopLoop()
+    voiceCoach.stopSpeaking()
   }
 
   async function handleEnd() {
@@ -1189,6 +1191,9 @@ export function CameraArea() {
     stopLoop()
     stopCamera()
     setElapsed(0)
+    
+    // Stop voice coach immediately
+    voiceCoach.stopSpeaking()
     
     // Reset coaching FSM
     if (coachingFSMRef.current) {
