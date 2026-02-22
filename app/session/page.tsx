@@ -9,7 +9,7 @@ import { useEffect } from "react"
 import * as voiceCoach from "@/lib/voice/voiceCoach"
 
 function VoiceCoachIntegration() {
-  const { sessionActive, metrics } = useAppState()
+  const { sessionActive, metrics, plan } = useAppState()
   
   // Initialize voice coach on mount
   useEffect(() => {
@@ -18,21 +18,13 @@ function VoiceCoachIntegration() {
     })
   }, [])
 
-  // Use the voice coach hook to monitor metrics
-  useVoiceCoach({ sessionActive, metrics })
+  // Use the voice coach hook to monitor metrics with exercise-specific coaching
+  useVoiceCoach({ sessionActive, metrics, plan })
 
-  // Handle session end - speak completion message
-  useEffect(() => {
-    if (!sessionActive && metrics.repCount > 0) {
-      // Session just ended, speak completion (optional)
-      // Only speak if voice is enabled and we had some activity
-      if (voiceCoach.isEnabled()) {
-        setTimeout(() => {
-          voiceCoach.speak("Session complete")
-        }, 500)
-      }
-    }
-  }, [sessionActive, metrics.repCount])
+  // Handle session end - DISABLED (now handled in useVoiceCoach hook for all exercises)
+  // useEffect(() => {
+  //   // Disabled - session end is now handled in useVoiceCoach hook with exercise-specific logic
+  // }, [])
 
   return null
 }

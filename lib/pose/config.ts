@@ -129,7 +129,7 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
       label: "Knee angle",
       maxAngle: 115, // ≤115° for good depth
       upThreshold: 165,
-      downThreshold: 100,
+      downThreshold: 120, // Increased from 100 to make rep counting easier (less depth required)
     },
     additionalAngles: [
       {
@@ -653,7 +653,7 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
       label: "Shoulder elevation",
       minAngle: 85, // Minimum acceptable top angle for form validation
       maxAngle: 90, // Maximum acceptable top angle (should not go above shoulder height)
-      upThreshold: 90, // Target angle at top position
+      upThreshold: 82.5, // Rep counted when shoulder raised above 80-85 degrees
       downThreshold: 20, // Angle at bottom position
     },
     shallowAngle: 85, // Minimum acceptable top angle (higher = better ROM)
