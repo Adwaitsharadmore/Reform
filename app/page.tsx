@@ -9,26 +9,46 @@ import {
   CheckCircle2,
   ClipboardList,
   ArrowRight,
+  Volume2,
+  Dumbbell,
 } from "lucide-react"
 
 const features = [
   {
     icon: Camera,
-    title: "Real-time Form Cues",
+    title: "Real-time Form Analysis",
     description:
-      "Get instant feedback on your exercise form using computer vision analysis.",
+      "Get instant visual feedback on your exercise form using MediaPipe computer vision. See form checks, angle measurements, and alignment cues in real-time.",
+  },
+  {
+    icon: Volume2,
+    title: "Voice Coaching",
+    description:
+      "Receive audio feedback and coaching instructions during exercises. Customizable voice settings guide you through each movement phase.",
   },
   {
     icon: Activity,
-    title: "Rep Counting & Scoring",
+    title: "Automatic Rep Counting & Scoring",
     description:
-      "Automatic rep detection with quality scores for every repetition.",
+      "AI-powered rep detection with quality scores for every repetition. Track depth, tempo, and form quality automatically.",
+  },
+  {
+    icon: Dumbbell,
+    title: "Multiple Exercise Types",
+    description:
+      "Supports 6+ exercises including Squats, Lunges, Shoulder Raise, Hip Hinge, Shoulder Press, and Calf Raise with exercise-specific coaching.",
+  },
+  {
+    icon: ClipboardList,
+    title: "Personalized Exercise Plans",
+    description:
+      "Create and manage your PT prescription with custom sets, reps, and exercise selections tailored to your injury area.",
   },
   {
     icon: BarChart3,
-    title: "Progress Summaries",
+    title: "Progress Tracking & Analytics",
     description:
-      "Track your improvement over time with detailed session reports.",
+      "Detailed session summaries with trends, improvement metrics, and insights to help you track your recovery journey.",
   },
 ]
 
@@ -43,7 +63,7 @@ const steps = [
     number: "02",
     title: "Follow guided sessions",
     description:
-      "Perform exercises with real-time coaching and form feedback.",
+      "Perform exercises with real-time visual and voice coaching, automatic rep counting, and instant form feedback.",
   },
   {
     number: "03",
@@ -60,21 +80,14 @@ export default function LandingPage() {
       <section className="relative overflow-hidden bg-card">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,var(--color-primary)/0.08,transparent_60%)]" />
         <div className="relative mx-auto flex max-w-6xl flex-col items-center px-4 py-20 text-center lg:px-8 lg:py-32">
-          <Badge
-            variant="secondary"
-            className="mb-6 gap-1.5 px-3 py-1 text-sm"
-          >
-            <Activity className="h-3.5 w-3.5" />
-            AI-Powered Physical Therapy
-          </Badge>
           <h1 className="max-w-3xl text-balance text-4xl font-bold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
             Do Physical Therapy at Home
             <span className="text-primary">{" "}With Real-Time Form Feedback</span>
           </h1>
           <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground">
             Reform helps you perform your PT exercises correctly using
-            your camera. Get instant cues, count reps automatically, and track
-            your progress over time.
+            your camera. Get real-time form feedback, voice coaching, automatic rep counting, 
+            and track your progress across multiple exercise types—all from home.
           </p>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
             <Button asChild size="lg" className="gap-2">
@@ -100,7 +113,7 @@ export default function LandingPage() {
             Everything you need for guided PT
           </h2>
           <p className="mt-3 text-muted-foreground">
-            Smart tools to make your physical therapy effective and consistent.
+            AI-powered tools to make your physical therapy effective, safe, and consistent at home.
           </p>
         </div>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
