@@ -85,8 +85,7 @@ export default function LandingPage() {
             <span className="text-primary">{" "}With Real-Time Form Feedback</span>
           </h1>
           <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-muted-foreground">
-            Reform helps you perform your PT exercises correctly using
-            your camera. Get real-time form feedback, voice coaching, automatic rep counting, 
+            Get real-time form feedback, voice coaching, automatic rep counting, 
             and track your progress across multiple exercise types—all from home.
           </p>
           <div className="mt-10 flex flex-col gap-3 sm:flex-row">
