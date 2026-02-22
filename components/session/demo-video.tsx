@@ -57,7 +57,8 @@ export function DemoVideo() {
       clearInterval(intervalRef.current)
       intervalRef.current = null
     }
-  }, [currentExercise, setDemoWatched])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentExercise])
 
   // Simple timer-based tracking (since YouTube iframe API requires more setup)
   // Start tracking when component mounts (assume user will watch)
