@@ -127,25 +127,44 @@ export function CoachingPanel() {
               {metrics.feedback.status}
             </Badge>
             <div className="flex flex-col gap-1.5">
-              {metrics.feedback.checks.map((check, index) => (
-                <div
-                  key={`${check.label}-${index}`}
-                  className="flex items-center gap-2 text-sm"
-                >
-                  {check.ok ? (
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-destructive" />
-                  )}
-                  <span
-                    className={
-                      check.ok ? "text-foreground" : "font-medium text-destructive"
-                    }
+              {metrics.feedback.checks.map((check, index) => {
+                // Look up correction message for failed checks
+                const fc = poseConfig.coaching?.formCorrections
+                let correctionMsg: string | null = null
+                if (!check.ok && fc) {
+                  // Try direct label key first (e.g. "Hip flexion", "Knee angle", "Trunk neutrality")
+                  correctionMsg = fc[check.label]?.[0] ?? null
+                  // Fall back to canonical depth/alignment keys
+                  if (!correctionMsg && check.label === poseConfig.depthLabel) correctionMsg = fc.depth?.[0] ?? null
+                  if (!correctionMsg && check.label === poseConfig.alignmentLabel) correctionMsg = fc.alignment?.[0] ?? null
+                }
+                return (
+                  <div
+                    key={`${check.label}-${index}`}
+                    className="flex items-start gap-2 text-sm"
                   >
-                    {check.label}
-                  </span>
-                </div>
-              ))}
+                    {check.ok ? (
+                      <CheckCircle2 className="h-4 w-4 mt-0.5 text-success shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 mt-0.5 text-destructive shrink-0" />
+                    )}
+                    <div className="flex flex-col gap-0.5">
+                      <span
+                        className={
+                          check.ok ? "text-foreground" : "font-medium text-destructive"
+                        }
+                      >
+                        {check.label}
+                      </span>
+                      {correctionMsg && (
+                        <span className="text-xs text-muted-foreground leading-snug">
+                          {correctionMsg}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
 

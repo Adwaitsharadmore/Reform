@@ -68,6 +68,18 @@ export interface SessionMetrics {
   tempoTelemetry?: RepTelemetry
 }
 
+export interface RepEvent {
+  ts: number // Timestamp
+  exercise: ExerciseType
+  repIndex: number // Rep number for this exercise
+  score: number
+  repDurationSec: number | null
+  tempoStatus?: "good" | "fast" | "slow"
+  checksFailed: string[] // Labels of failed checks
+  primaryMetric: number // Angle or elevationDiff
+  side?: "left" | "right" // For trackBothSides exercises
+}
+
 export interface SessionResult {
   sessionId: string
   planId?: string
@@ -79,4 +91,5 @@ export interface SessionResult {
   mainTip: string
   exercises?: ExerciseResult[]
   duration: number
+  repEvents?: RepEvent[] // Per-rep event data for analytics
 }

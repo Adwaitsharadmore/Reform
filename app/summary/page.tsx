@@ -21,6 +21,7 @@ import {
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
 import Link from "next/link"
+import { useMemo } from "react"
 import {
   CheckCircle2,
   RotateCcw,
@@ -37,11 +38,34 @@ import {
   AlertCircle,
   BarChart3,
   PieChart,
+  Gauge,
+  TrendingDown,
+  Zap,
 } from "lucide-react"
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, PieChart as RechartsPieChart, Pie, Legend } from "recharts"
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  ResponsiveContainer, 
+  Cell, 
+  PieChart as RechartsPieChart, 
+  Pie, 
+  Legend,
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
+  RadialBarChart,
+  RadialBar,
+} from "recharts"
+import { generateSessionInsights } from "@/lib/analytics/sessionInsights"
 
 export default function SummaryPage() {
   const { sessionResult } = useAppState()
+  
+  // Generate insights from session result
+  const insights = useMemo(() => generateSessionInsights(sessionResult), [sessionResult])
 
   function formatDuration(milliseconds: number) {
     const totalSeconds = Math.floor(milliseconds / 1000)
@@ -58,6 +82,8 @@ export default function SummaryPage() {
       `Best Score: ${sessionResult.bestScore}/100`,
       `Duration: ${formatDuration(sessionResult.duration)}`,
       ``,
+      `Summary: ${insights.narrative}`,
+      ``,
       `Tip: ${sessionResult.mainTip}`,
       ``,
       `Exercises:`,
@@ -67,10 +93,27 @@ export default function SummaryPage() {
               `- ${e.exercise}: ${e.reps} reps, avg ${e.avgScore}/100 ${e.issues.length > 0 ? `(${e.issues.join(", ")})` : ""}`
           )
         : ["No exercise data available"]),
+      ``,
+      `Next Session Focus:`,
+      ...insights.nextSessionFocus.map(item => `- ${item}`),
     ].join("\n")
 
     navigator.clipboard.writeText(text)
     toast.success("Summary copied to clipboard!")
+  }
+  
+  function handleExport() {
+    const dataStr = JSON.stringify(sessionResult, null, 2)
+    const dataBlob = new Blob([dataStr], { type: "application/json" })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `session-${sessionResult.sessionId}-${new Date(sessionResult.endedAt).toISOString().split("T")[0]}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    toast.success("Session data exported!")
   }
 
   // Calculate additional metrics
@@ -136,6 +179,50 @@ export default function SummaryPage() {
     "hsl(var(--chart-3))",
     "hsl(var(--chart-4))",
   ]
+  
+  // Prepare rep score over time data (line chart)
+  const repScoreData = useMemo(() => {
+    if (!sessionResult.repEvents || sessionResult.repEvents.length === 0) return []
+    return sessionResult.repEvents.map((event, index) => ({
+      rep: index + 1,
+      score: event.score,
+      exercise: event.exercise,
+      timestamp: event.ts,
+    }))
+  }, [sessionResult.repEvents])
+  
+  // Prepare form status counts (stacked bar chart)
+  const formStatusData = useMemo(() => {
+    if (!sessionResult.repEvents || sessionResult.repEvents.length === 0) return []
+    const byExercise = new Map<string, { good: number; needsWork: number; watchForm: number }>()
+    
+    sessionResult.repEvents.forEach(event => {
+      const existing = byExercise.get(event.exercise) || { good: 0, needsWork: 0, watchForm: 0 }
+      // Approximate form status: no failed checks = good, 1-2 = needs work, 3+ = watch form
+      if (event.checksFailed.length === 0) {
+        existing.good++
+      } else if (event.checksFailed.length <= 2) {
+        existing.needsWork++
+      } else {
+        existing.watchForm++
+      }
+      byExercise.set(event.exercise, existing)
+    })
+    
+    return Array.from(byExercise.entries()).map(([exercise, counts]) => ({
+      exercise,
+      "Good form": counts.good,
+      "Needs work": counts.needsWork,
+      "Watch form": counts.watchForm,
+    }))
+  }, [sessionResult.repEvents])
+  
+  // Calculate overall tempo compliance for radial gauge
+  const overallTempoCompliance = useMemo(() => {
+    if (!sessionResult.repEvents || sessionResult.repEvents.length === 0) return 0
+    const goodTempo = sessionResult.repEvents.filter(e => e.tempoStatus === "good").length
+    return Math.round((goodTempo / sessionResult.repEvents.length) * 100)
+  }, [sessionResult.repEvents])
 
   const statCards = [
     {
@@ -199,17 +286,37 @@ export default function SummaryPage() {
               variant="outline"
               size="sm"
               className="gap-2"
-              onClick={() =>
-                toast.info("Download report coming soon!", {
-                  description: "PDF export will be available in a future update.",
-                })
-              }
+              onClick={handleExport}
             >
               <Download className="h-4 w-4" />
-              Export
+              Export JSON
             </Button>
           </div>
         </div>
+
+        {/* Hero Score + Narrative */}
+        <Card className="mb-6 bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+          <CardContent className="p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/20">
+                    <Trophy className="h-8 w-8 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-4xl font-bold text-foreground">
+                      {sessionResult.avgScore}/100
+                    </h2>
+                    <p className="text-sm text-muted-foreground">{scoreGrade}</p>
+                  </div>
+                </div>
+                <p className="text-base leading-relaxed text-foreground max-w-2xl">
+                  {insights.narrative}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Summary cards */}
         <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -338,6 +445,246 @@ export default function SummaryPage() {
           </Card>
         </div>
 
+        {/* New Analytics Charts */}
+        <div className="mb-6 grid gap-6 lg:grid-cols-3">
+          {/* Rep Scores Over Time (Line Chart) */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                Rep Scores Over Time
+              </CardTitle>
+              <CardDescription>Score progression throughout the session</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {repScoreData.length > 0 ? (
+                <ChartContainer config={chartConfig} className="h-[300px]">
+                  <LineChart data={repScoreData}>
+                    <XAxis
+                      dataKey="rep"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      domain={[0, 100]}
+                    />
+                    <ChartTooltip
+                      content={<ChartTooltipContent />}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="score"
+                      stroke="hsl(var(--chart-1))"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                  </LineChart>
+                </ChartContainer>
+              ) : (
+                <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+                  No rep data available
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Tempo Compliance (Radial Gauge) */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Gauge className="h-5 w-5" />
+                Tempo Compliance
+              </CardTitle>
+              <CardDescription>% of reps with good tempo</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-col items-center justify-center h-[300px]">
+                <ChartContainer config={chartConfig} className="h-[200px] w-[200px]">
+                  <RadialBarChart
+                    innerRadius={60}
+                    outerRadius={100}
+                    data={[{ value: overallTempoCompliance, name: "Tempo" }]}
+                    startAngle={90}
+                    endAngle={-270}
+                  >
+                    <RadialBar
+                      dataKey="value"
+                      cornerRadius={10}
+                      fill="hsl(var(--chart-1))"
+                    />
+                    <ChartTooltip
+                      content={<ChartTooltipContent />}
+                    />
+                  </RadialBarChart>
+                </ChartContainer>
+                <div className="mt-4 text-center">
+                  <p className="text-3xl font-bold text-foreground">{overallTempoCompliance}%</p>
+                  <p className="text-sm text-muted-foreground">Good tempo</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Form Status by Exercise (Stacked Bar Chart) */}
+        {formStatusData.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Form Status by Exercise
+              </CardTitle>
+              <CardDescription>Distribution of form quality across exercises</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ChartContainer config={chartConfig} className="h-[300px]">
+                <BarChart data={formStatusData}>
+                  <XAxis
+                    dataKey="exercise"
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tickMargin={8}
+                  />
+                  <ChartTooltip
+                    content={<ChartTooltipContent />}
+                  />
+                  <Bar dataKey="Good form" stackId="a" fill="hsl(var(--chart-1))" />
+                  <Bar dataKey="Needs work" stackId="a" fill="hsl(var(--chart-3))" />
+                  <Bar dataKey="Watch form" stackId="a" fill="hsl(var(--chart-4))" />
+                  <Legend />
+                </BarChart>
+              </ChartContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Physio-Style Insight Panels */}
+        {insights.exerciseInsights.length > 0 && (
+          <div className="mb-6 grid gap-6 lg:grid-cols-2">
+            {insights.exerciseInsights.map((insight) => (
+              <Card key={insight.exercise}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Activity className="h-5 w-5" />
+                    {insight.exercise} Insights
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {/* Consistency Score */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Consistency</span>
+                      <div className="flex items-center gap-2">
+                        <Progress value={insight.consistencyScore} className="w-24 h-2" />
+                        <span className="text-sm font-medium">{insight.consistencyScore}%</span>
+                      </div>
+                    </div>
+                    
+                    {/* Tempo Compliance */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Tempo Compliance</span>
+                      <div className="flex items-center gap-2">
+                        <Progress value={insight.tempoCompliance} className="w-24 h-2" />
+                        <span className="text-sm font-medium">{insight.tempoCompliance}%</span>
+                      </div>
+                    </div>
+                    
+                    {/* Form Compliance */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Form Compliance</span>
+                      <div className="flex items-center gap-2">
+                        <Progress value={insight.formCompliance} className="w-24 h-2" />
+                        <span className="text-sm font-medium">{insight.formCompliance}%</span>
+                      </div>
+                    </div>
+                    
+                    {/* Range of Motion */}
+                    <div className="pt-2 border-t">
+                      <p className="text-sm font-medium mb-2">Range of Motion</p>
+                      <div className="flex gap-4 text-xs text-muted-foreground">
+                        <div>
+                          <span>Min: </span>
+                          <span className="font-mono">{insight.rangeOfMotion.min.toFixed(1)}</span>
+                        </div>
+                        <div>
+                          <span>Median: </span>
+                          <span className="font-mono">{insight.rangeOfMotion.median.toFixed(1)}</span>
+                        </div>
+                        <div>
+                          <span>Max: </span>
+                          <span className="font-mono">{insight.rangeOfMotion.max.toFixed(1)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Top Issues */}
+                    {insight.topIssues.length > 0 && (
+                      <div className="pt-2 border-t">
+                        <p className="text-sm font-medium mb-2">Top Issues</p>
+                        <div className="flex flex-wrap gap-1">
+                          {insight.topIssues.map((issue) => (
+                            <Badge key={issue} variant="outline" className="text-xs">
+                              {issue}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Left-Right Imbalance */}
+                    {insight.leftRightImbalance && insight.leftRightImbalance.imbalancePercent > 15 && (
+                      <div className="pt-2 border-t">
+                        <div className="flex items-center gap-2 text-sm">
+                          <AlertCircle className="h-4 w-4 text-warning" />
+                          <span className="font-medium text-warning">
+                            Left-Right Imbalance: {Math.round(insight.leftRightImbalance.imbalancePercent)}%
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Left avg: {insight.leftRightImbalance.leftAvg.toFixed(1)}, 
+                          Right avg: {insight.leftRightImbalance.rightAvg.toFixed(1)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Next Session Focus */}
+        {insights.nextSessionFocus.length > 0 && (
+          <Card className="mb-6 bg-warning/5 border-warning/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="h-5 w-5 text-warning" />
+                Next Session Focus
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {insights.nextSessionFocus.map((item, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <span className="text-warning mt-1">•</span>
+                    <span className="text-sm">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Insights and Breakdown */}
         <div className="mb-6 grid gap-6 lg:grid-cols-3">
           {/* Main Tip Card */}
@@ -439,72 +786,123 @@ export default function SummaryPage() {
                       <TableHead className="text-right">Reps</TableHead>
                       <TableHead className="text-right">Avg Score</TableHead>
                       <TableHead className="text-right">Best Score</TableHead>
+                      <TableHead className="text-center">Metrics</TableHead>
                       <TableHead>Issues</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sessionResult.exercises.map((ex) => (
-                      <TableRow key={ex.exercise}>
-                        <TableCell className="font-medium">{ex.exercise}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <span>{ex.reps}</span>
-                            <div className="h-2 w-16 rounded-full bg-muted">
-                              <div
-                                className="h-2 rounded-full bg-primary"
-                                style={{
-                                  width: `${Math.min(100, (ex.reps / 20) * 100)}%`,
-                                }}
-                              />
+                    {sessionResult.exercises.map((ex) => {
+                      const exerciseInsight = insights.exerciseInsights.find(i => i.exercise === ex.exercise)
+                      return (
+                        <TableRow key={ex.exercise}>
+                          <TableCell className="font-medium">{ex.exercise}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <span>{ex.reps}</span>
+                              <div className="h-2 w-16 rounded-full bg-muted">
+                                <div
+                                  className="h-2 rounded-full bg-primary"
+                                  style={{
+                                    width: `${Math.min(100, (ex.reps / 20) * 100)}%`,
+                                  }}
+                                />
+                              </div>
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Badge
-                            variant={
-                              ex.avgScore >= 90
-                                ? "default"
-                                : ex.avgScore >= 80
-                                ? "secondary"
-                                : "outline"
-                            }
-                            className={
-                              ex.avgScore >= 90
-                                ? "bg-success/10 text-success hover:bg-success/20"
-                                : ex.avgScore >= 80
-                                ? ""
-                                : "bg-warning/10 text-warning hover:bg-warning/20"
-                            }
-                          >
-                            {ex.avgScore}/100
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Badge variant="outline" className="font-mono">
-                            {ex.bestScore}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {ex.issues.length > 0 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {ex.issues.map((issue) => (
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge
+                              variant={
+                                ex.avgScore >= 90
+                                  ? "default"
+                                  : ex.avgScore >= 80
+                                  ? "secondary"
+                                  : "outline"
+                              }
+                              className={
+                                ex.avgScore >= 90
+                                  ? "bg-success/10 text-success hover:bg-success/20"
+                                  : ex.avgScore >= 80
+                                  ? ""
+                                  : "bg-warning/10 text-warning hover:bg-warning/20"
+                              }
+                            >
+                              {ex.avgScore}/100
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant="outline" className="font-mono">
+                              {ex.bestScore}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {exerciseInsight ? (
+                              <div className="flex items-center justify-center gap-1 flex-wrap">
                                 <Badge
-                                  key={issue}
                                   variant="outline"
-                                  className="text-xs"
+                                  className={`text-xs ${
+                                    exerciseInsight.tempoCompliance >= 80
+                                      ? "bg-success/10 text-success"
+                                      : exerciseInsight.tempoCompliance >= 60
+                                      ? "bg-warning/10 text-warning"
+                                      : "bg-destructive/10 text-destructive"
+                                  }`}
+                                  title="Tempo Compliance"
                                 >
-                                  {issue}
+                                  ⏱ {exerciseInsight.tempoCompliance}%
                                 </Badge>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">
-                              None
-                            </span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                                <Badge
+                                  variant="outline"
+                                  className={`text-xs ${
+                                    exerciseInsight.formCompliance >= 80
+                                      ? "bg-success/10 text-success"
+                                      : exerciseInsight.formCompliance >= 60
+                                      ? "bg-warning/10 text-warning"
+                                      : "bg-destructive/10 text-destructive"
+                                  }`}
+                                  title="Form Compliance"
+                                >
+                                  ✓ {exerciseInsight.formCompliance}%
+                                </Badge>
+                                <Badge
+                                  variant="outline"
+                                  className={`text-xs ${
+                                    exerciseInsight.consistencyScore >= 80
+                                      ? "bg-success/10 text-success"
+                                      : exerciseInsight.consistencyScore >= 60
+                                      ? "bg-warning/10 text-warning"
+                                      : "bg-destructive/10 text-destructive"
+                                  }`}
+                                  title="Consistency"
+                                >
+                                  📊 {exerciseInsight.consistencyScore}%
+                                </Badge>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">N/A</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {ex.issues.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {ex.issues.map((issue) => (
+                                  <Badge
+                                    key={issue}
+                                    variant="outline"
+                                    className="text-xs"
+                                  >
+                                    {issue}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">
+                                None
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
               </div>

@@ -36,6 +36,7 @@ export function CameraArea() {
   const exerciseConfig = getExerciseConfig(metrics.currentExercise)
   const poseConfig = exerciseConfig || getPoseConfig(plan.injuryArea)
 
+  const [mounted, setMounted] = useState(false)
   const [showSkeleton, setShowSkeleton] = useState(true)
   const [mirrorCamera, setMirrorCamera] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -120,6 +121,9 @@ export function CameraArea() {
   // Coaching FSM ref
   const coachingFSMRef = useRef<ReturnType<typeof createCoachingFSM> | null>(null)
   
+  // Defer demoWatched reads to client-only to avoid SSR/client hydration mismatch
+  useEffect(() => { setMounted(true) }, [])
+
   // Update pose config ref when exercise or plan changes
   useEffect(() => {
     const exerciseConfig = getExerciseConfig(metrics.currentExercise)
@@ -286,7 +290,8 @@ export function CameraArea() {
     bodyAngle: number | null, 
     conf: number | null,
     landmarks?: any[],
-    useRight?: boolean
+    useRight?: boolean,
+    repState?: "up" | "down" | "rest"
   ): { status: "Good form" | "Needs work" | "Watch form"; checks: { label: string; ok: boolean }[] } {
     const config = poseConfigRef.current
     
@@ -306,6 +311,8 @@ export function CameraArea() {
     let hasIssues = false
 
     // Check primary angle/elevation (depth)
+    // For hip hinge and similar exercises: only check depth when in DOWN state
+    // When standing (UP/REST), depth check should pass
     let primaryOk: boolean
     if (config.measurementType === 'elevation') {
       // For elevation: check if the difference between top and rest meets the threshold
@@ -313,8 +320,33 @@ export function CameraArea() {
       const elevationValue = elevationDiffRef.current > 0 ? elevationDiffRef.current : (bodyAngle ?? 0)
       primaryOk = elevationValue >= config.shallowAngle
     } else {
-      // For angles: lower angle = deeper movement
-      primaryOk = bodyAngle <= config.shallowAngle
+      // For angles: check depth based on depthDirection
+      // For hip hinge: only check depth when in DOWN state (hinged position)
+      // When in UP/REST (standing), depth check passes
+      if (config.primaryAngle.downThreshold !== undefined && repState !== undefined && config.depthDirection !== 'higherBetter') {
+        // Only validate depth when in the DOWN/hinge position (for hip hinge, not shoulder raises)
+        if (repState === "down") {
+          // In hinge position: angle should be between minAngle and maxAngle (115-120° for hip hinge)
+          const inRange = bodyAngle >= (config.primaryAngle.minAngle ?? 0) && 
+                         bodyAngle <= (config.primaryAngle.maxAngle ?? 180)
+          primaryOk = inRange
+        } else {
+          // In UP/REST (standing): depth check passes (not relevant at this phase)
+          primaryOk = true
+        }
+      } else {
+        // For exercises with depthDirection: use appropriate comparison
+        if (config.depthDirection === 'higherBetter') {
+          // Higher angle = better depth (e.g., shoulder raises)
+          // Must be between downThreshold (minimum, e.g., 20°) and maxAngle (maximum, e.g., 90°)
+          const minAngle = config.primaryAngle.downThreshold ?? config.shallowAngle
+          const maxAngle = config.primaryAngle.maxAngle ?? 180
+          primaryOk = bodyAngle >= minAngle && bodyAngle <= maxAngle
+        } else {
+          // Lower angle = better depth (default, e.g., squats)
+          primaryOk = bodyAngle <= config.shallowAngle
+        }
+      }
     }
     checks.push({ label: config.depthLabel, ok: primaryOk })
     if (!primaryOk) hasIssues = true
@@ -358,9 +390,9 @@ export function CameraArea() {
         ? "Needs work" 
         : "Good form"
     } else {
-      status = hasIssues || bodyAngle > config.shallowAngle 
-        ? "Needs work" 
-        : "Good form"
+      // For angle-based exercises: use hasIssues to determine status
+      // For hip hinge with repState-aware depth checking, primaryOk already accounts for state
+      status = hasIssues ? "Needs work" : "Good form"
     }
     
     return { status, checks }
@@ -899,6 +931,28 @@ export function CameraArea() {
           }
         }
 
+        // Collect repEvent data for analytics (before resetting trackers)
+        const feedbackForRep = computeFeedback(bodyAngle, conf, landmarks, useRight, repState)
+        const checksFailed = feedbackForRep.checks.filter(c => !c.ok).map(c => c.label)
+        const repEvent = {
+          ts: Date.now(),
+          exercise: metrics.currentExercise,
+          repIndex: repCount, // Use global repCount as index (will be adjusted server-side if needed)
+          score: lastScore,
+          repDurationSec: repDuration,
+          tempoStatus,
+          checksFailed,
+          primaryMetric: valueForScoring,
+          side: config.trackBothSides ? (activeSideRef.current || undefined) : undefined,
+        }
+        
+        // Send repEvent to API (non-blocking)
+        fetch("/api/session/repEvent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(repEvent),
+        }).catch((err) => console.error("Failed to save repEvent:", err))
+
         // reset trackers for next rep
         repMinAngleRef.current = 999
         minHeelYRef.current = null
@@ -910,7 +964,7 @@ export function CameraArea() {
         // (We'll preserve it from previous metrics)
       }
 
-      const feedback = computeFeedback(bodyAngle, conf, landmarks, useRight)
+      const feedback = computeFeedback(bodyAngle, conf, landmarks, useRight, repState)
 
       // Update coaching FSM only after user confirms start
       if (coachingFSMRef.current && userConfirmedStart) {
@@ -1392,14 +1446,14 @@ export function CameraArea() {
                   <Button 
                     onClick={handleStart} 
                     className="gap-2"
-                    disabled={!demoWatched[metrics.currentExercise]}
+                    disabled={!mounted || !demoWatched[metrics.currentExercise]}
                   >
                     <Play className="h-4 w-4" />
                     Start
                   </Button>
                 </span>
               </TooltipTrigger>
-              {!demoWatched[metrics.currentExercise] && (
+              {(!mounted || !demoWatched[metrics.currentExercise]) && (
                 <TooltipContent>
                   <p>Please watch the demo video for {metrics.currentExercise} first</p>
                 </TooltipContent>

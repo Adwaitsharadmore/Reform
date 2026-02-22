@@ -16,9 +16,18 @@ export function getFeedback(bodyAngle: number | null, config: PoseConfig): Feedb
     if (bodyAngle < config.shallowAngle) return "Go higher";
     return "Good";
   } else {
-    // For angles: higher angle = shallow movement
-    if (bodyAngle > config.shallowAngle) return "Go lower";
-    return "Good";
+    // For angles: check depthDirection
+    if (config.depthDirection === 'higherBetter') {
+      // Higher angle = better depth (e.g., shoulder raises)
+      // Lower angle = shallow movement
+      if (bodyAngle < config.shallowAngle) return "Go higher";
+      return "Good";
+    } else {
+      // Lower angle = better depth (default, e.g., squats)
+      // Higher angle = shallow movement
+      if (bodyAngle > config.shallowAngle) return "Go lower";
+      return "Good";
+    }
   }
 }
 
@@ -30,9 +39,18 @@ export function scoreRep(minBodyAngle: number, config: PoseConfig) {
     if (minBodyAngle < config.shallowAngle) score -= 35; // too shallow
     if (minBodyAngle < config.veryShallowAngle) score -= 30; // very shallow
   } else {
-    // For angles: minBodyAngle lower = deeper movement
-    if (minBodyAngle > config.shallowAngle) score -= 35; // too shallow
-    if (minBodyAngle > config.veryShallowAngle) score -= 30; // very shallow
+    // For angles: check depthDirection
+    if (config.depthDirection === 'higherBetter') {
+      // Higher angle = better depth (e.g., shoulder raises)
+      // Lower angle = shallow movement
+      if (minBodyAngle < config.shallowAngle) score -= 35; // too shallow
+      if (minBodyAngle < config.veryShallowAngle) score -= 30; // very shallow
+    } else {
+      // Lower angle = better depth (default, e.g., squats)
+      // Higher angle = shallow movement
+      if (minBodyAngle > config.shallowAngle) score -= 35; // too shallow
+      if (minBodyAngle > config.veryShallowAngle) score -= 30; // very shallow
+    }
   }
   
   return Math.max(0, Math.min(100, score));

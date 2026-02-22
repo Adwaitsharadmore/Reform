@@ -26,6 +26,7 @@ export function DemoVideo() {
   const currentExercise = metrics.currentExercise
   const videoId = EXERCISE_VIDEOS[currentExercise] || EXERCISE_VIDEOS["Squat"]
   
+  const [mounted, setMounted] = useState(false)
   const [watchedTime, setWatchedTime] = useState(0)
   const [isMarkedWatched, setIsMarkedWatched] = useState(false)
   const [canMarkWatched, setCanMarkWatched] = useState(false)
@@ -33,7 +34,13 @@ export function DemoVideo() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
 
-  const isWatched = demoWatched[currentExercise] || false
+  // Defer isWatched to client-only to avoid SSR/client hydration mismatch
+  // (demoWatched may be rehydrated from localStorage on the client but is empty on the server)
+  const isWatched = mounted && (demoWatched[currentExercise] || false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   const canSkip = process.env.NEXT_PUBLIC_DEMO_SKIP === "true"
 
   // Set origin client-side only to avoid hydration mismatch

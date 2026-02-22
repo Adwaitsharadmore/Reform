@@ -1,4 +1,4 @@
-import type { Plan, SessionMetrics, SessionResult } from "./types"
+import type { Plan, SessionMetrics, SessionResult, RepEvent } from "./types"
 
 export const db = {
   plan: null as Plan | null,
@@ -12,6 +12,7 @@ export const db = {
     scores: [] as number[],
     lastMetrics: null as SessionMetrics | null,
     result: null as SessionResult | null,
+    repEvents: [] as RepEvent[], // Per-rep event data for analytics
     // Track exercise-specific data
     exerciseData: {} as Record<string, {
       scores: number[]

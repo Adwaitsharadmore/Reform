@@ -213,16 +213,39 @@ export function createCoachingFSM(config: PoseConfig) {
   ): string | null {
     const checks = feedback.checks
 
-    // Priority 1: Form corrections (depth > alignment)
+    // Priority 1: Form corrections - check all failed checks in priority order
     if (feedback.status !== "Good form" && coaching?.formCorrections) {
+      const fc = coaching.formCorrections
+
+      // Helper: look up correction for a given label
+      function correctionFor(label: string): string | null {
+        // Try direct label key first (e.g. "Hip flexion", "Knee angle", "Trunk neutrality")
+        if (fc[label]?.[0]) return fc[label][0]
+        // Then try canonical keys for depth/alignment
+        if (label === config.depthLabel && fc.depth?.[0]) return fc.depth[0]
+        if (label === config.alignmentLabel && fc.alignment?.[0]) return fc.alignment[0]
+        return null
+      }
+
+      // Priority order: depth label → alignment label → any other failed check
       const depthCheck = checks.find(c => c.label === config.depthLabel)
-      if (depthCheck && !depthCheck.ok && coaching.formCorrections.depth) {
-        return coaching.formCorrections.depth[0]
+      if (depthCheck && !depthCheck.ok) {
+        const msg = correctionFor(depthCheck.label)
+        if (msg) return msg
       }
 
       const alignmentCheck = checks.find(c => c.label === config.alignmentLabel)
-      if (alignmentCheck && !alignmentCheck.ok && coaching.formCorrections.alignment) {
-        return coaching.formCorrections.alignment[0]
+      if (alignmentCheck && !alignmentCheck.ok) {
+        const msg = correctionFor(alignmentCheck.label)
+        if (msg) return msg
+      }
+
+      // Check remaining failed checks (additional angles etc.)
+      for (const check of checks) {
+        if (!check.ok && check.label !== config.depthLabel && check.label !== config.alignmentLabel) {
+          const msg = correctionFor(check.label)
+          if (msg) return msg
+        }
       }
     }
 

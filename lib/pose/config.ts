@@ -112,6 +112,9 @@ export interface PoseConfig {
   measurementType?: 'angle' | 'elevation'
   // For elevation-based exercises, landmark to track (ankle for calf raises)
   elevationLandmark?: { left: number; right: number }
+  // Depth direction: 'lowerBetter' means lower angle = better depth (default)
+  // 'higherBetter' means higher angle = better depth (e.g., shoulder raises)
+  depthDirection?: 'lowerBetter' | 'higherBetter'
   // Coaching instructions for real-time guidance
   coaching?: CoachingInstructions
 }
@@ -220,30 +223,48 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
     },
   },
   "Hip Hinge": {
+    // Hip Hinge: Measures shoulder-hip-knee angle
+    // Standing upright: ~175° (straight line)
+    // Good hinge depth: 115-120° (deeper = smaller angle)
+    // Rep counting: UP = near standing (175°), DOWN = hinge position (115-120°)
     primaryAngle: {
       pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
       pointB: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
       pointC: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
       label: "Hip flexion",
-      minAngle: 70,
-      maxAngle: 90, // 70-90°
-      upThreshold: 170,
-      downThreshold: 120,
+      minAngle: 115, // Minimum acceptable hinge depth (bottom of range)
+      maxAngle: 120, // Maximum acceptable hinge depth at bottom (too deep might indicate rounding)
+      upThreshold: 175, // Near standing position (UP state)
+      downThreshold: 120, // Hinge position threshold (DOWN state)
     },
     additionalAngles: [
       {
+        // Knee angle: Should stay relatively straight (>150°) to avoid squatting
         pointA: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
         pointB: { left: LANDMARKS.LEFT_KNEE, right: LANDMARKS.RIGHT_KNEE },
         pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
         label: "Knee angle",
-        minAngle: 150, // >150°
+        minAngle: 150, // >150° = knees mostly straight (avoid squatting)
+      },
+      {
+        // Trunk neutrality: shoulder-hip-ankle alignment to detect rounding
+        // When neutral, this angle should be relatively large (>140°)
+        pointA: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
+        pointB: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
+        pointC: { left: LANDMARKS.LEFT_ANKLE, right: LANDMARKS.RIGHT_ANKLE },
+        label: "Trunk neutrality",
+        minAngle: 140, // >140° = neutral spine (lower = rounding)
       },
     ],
-    shallowAngle: 150,
-    veryShallowAngle: 160,
+    // For hip hinge: smaller angle = deeper hinge (good)
+    // Good form range: 115-120° (hinge) to 175° (standing)
+    // shallowAngle = maximum acceptable angle for good depth (120°)
+    // veryShallowAngle = maximum acceptable angle for acceptable depth (125°)
+    shallowAngle: 120, // Good hinge depth: angle <= 120°
+    veryShallowAngle: 125, // Acceptable hinge depth: angle <= 125°
     depthLabel: "Hip flexion",
     alignmentLabel: "Knee angle",
-    additionalLabels: ["Knee angle"],
+    additionalLabels: ["Knee angle", "Trunk neutrality"],
     confidencePoints: [LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.LEFT_KNEE, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP, LANDMARKS.RIGHT_KNEE],
     trackBothSides: false,
     tempo: {
@@ -287,10 +308,30 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
         "Prepare for the next rep"
       ],
       formCorrections: {
+        depth: [
+          "Go deeper - push your hips back more to reach 115-120°",
+          "You're not hinging deep enough - aim for 115-120° at the bottom",
+          "Hinge at the hips, not the knees - feel the stretch in your hamstrings"
+        ],
         alignment: [
           "Keep your back straight - don't round",
-          "Maintain neutral spine",
-          "Don't let your back arch too much"
+          "Maintain neutral spine - don't let your back curve",
+          "Push your hips back, not down - you're squatting"
+        ],
+        "Trunk neutrality": [
+          "Keep your spine neutral - don't round your back",
+          "Maintain a straight line from shoulders to hips",
+          "Hinge at the hips, not by rounding your spine"
+        ],
+        "Knee angle": [
+          "Keep knees soft but not bent - push your hips back, not down",
+          "You're squatting instead of hinging - straighten your knees slightly",
+          "Bend at the hips, not the knees - keep knee angle above 150°"
+        ],
+        "Hip flexion": [
+          "Push your hips further back to reach the 115-120° target",
+          "You're not hinging deep enough - feel the hamstring stretch",
+          "Hinge at the hips more - aim for a deeper position"
         ],
         tempo: [
           "Control the movement",
@@ -610,15 +651,18 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
       pointB: { left: LANDMARKS.LEFT_SHOULDER, right: LANDMARKS.RIGHT_SHOULDER },
       pointC: { left: LANDMARKS.LEFT_HIP, right: LANDMARKS.RIGHT_HIP },
       label: "Shoulder elevation",
-      upThreshold: 80,
-      downThreshold: 25,
+      minAngle: 85, // Minimum acceptable top angle for form validation
+      maxAngle: 90, // Maximum acceptable top angle (should not go above shoulder height)
+      upThreshold: 90, // Target angle at top position
+      downThreshold: 20, // Angle at bottom position
     },
-    shallowAngle: 120,
-    veryShallowAngle: 130,
+    shallowAngle: 85, // Minimum acceptable top angle (higher = better ROM)
+    veryShallowAngle: 75, // Minimum acceptable top angle for very shallow reps
     depthLabel: "Range of motion",
     alignmentLabel: "Shoulder alignment",
     confidencePoints: [LANDMARKS.LEFT_ELBOW, LANDMARKS.LEFT_SHOULDER, LANDMARKS.LEFT_HIP, LANDMARKS.RIGHT_ELBOW, LANDMARKS.RIGHT_SHOULDER, LANDMARKS.RIGHT_HIP],
     trackBothSides: true,
+    depthDirection: 'higherBetter', // Higher angle indicates greater ROM
     tempo: {
       downSec: { min: 2.0, max: 3.0 },
       upSec: { min: 1.5, max: 2.5 },
@@ -660,6 +704,11 @@ export const EXERCISE_CONFIGS: Record<ExerciseType, PoseConfig> = {
         "Prepare for the next rep"
       ],
       formCorrections: {
+        depth: [
+          "Don't raise above shoulder height - keep arms at 90°",
+          "Lower your arms slightly - you're going too high",
+          "Stop at shoulder height to avoid shrugging"
+        ],
         alignment: [
           "Keep your shoulders down - don't shrug",
           "Relax your neck",

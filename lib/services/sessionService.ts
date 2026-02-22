@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { SessionMetrics, SessionResult, ExerciseType } from "../types";
+import { SessionMetrics, SessionResult, ExerciseType, RepEvent } from "../types";
 
 function uid(prefix="sess") {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -14,6 +14,7 @@ export async function startSession(planId?: string) {
   db.session.lastRepScore = null;
   db.session.scores = [];
   db.session.result = null;
+  db.session.repEvents = [];
   db.session.exerciseData = {};
   return { sessionId: db.session.id, startedAt: db.session.startedAt };
 }
@@ -86,6 +87,7 @@ export async function endSession(): Promise<SessionResult> {
     mainTip,
     exercises: exercises.length > 0 ? exercises : undefined,
     duration: endedAt - db.session.startedAt,
+    repEvents: db.session.repEvents.length > 0 ? db.session.repEvents : undefined,
   };
 
   db.session.result = result;
@@ -160,4 +162,31 @@ export async function ingestMetrics(m: SessionMetrics) {
     // prevent duplicates if same score repeats rapidly
     if (last !== m.lastScore) db.session.scores.push(m.lastScore);
   }
+}
+
+/** Called when a rep is completed to store detailed rep event data */
+export async function ingestRepEvent(repEvent: RepEvent) {
+  // Adjust repIndex to be exercise-specific
+  const exercise = repEvent.exercise;
+  if (!db.session.exerciseData[exercise]) {
+    db.session.exerciseData[exercise] = {
+      scores: [],
+      repCount: 0,
+      issues: [],
+      lastRepCount: 0,
+      lastGlobalRepCount: 0,
+    };
+  }
+  
+  const exerciseData = db.session.exerciseData[exercise];
+  // Calculate exercise-specific rep index
+  const exerciseRepIndex = exerciseData.repCount + 1;
+  
+  // Create repEvent with adjusted index
+  const adjustedRepEvent: RepEvent = {
+    ...repEvent,
+    repIndex: exerciseRepIndex,
+  };
+  
+  db.session.repEvents.push(adjustedRepEvent);
 }
