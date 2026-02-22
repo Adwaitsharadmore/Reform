@@ -53,7 +53,7 @@ export function Navbar() {
             <Activity className="h-4 w-4 text-primary-foreground" />
           </div>
           <span className="text-lg font-bold tracking-tight text-foreground">
-            Reform
+            REFORM
           </span>
         </Link>
 

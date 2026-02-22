@@ -13,7 +13,7 @@ import { Play, CheckCircle2 } from "lucide-react"
 const EXERCISE_VIDEOS: Record<ExerciseType, string> = {
   "Squat": "eBVcvPA4J7Q",
   "Lunge": "CtyIVeJH6lI",
-  "Shoulder Raise": "2Xkwmf8L2eY",
+  "Shoulder Raise": "uf48kLnXI_M",
   "Hip Hinge": "2W_gXhut5S8",
   "Shoulder Press": "eBVcvPA4J7Q", // Fallback to first video
   "Calf Raise": "CtyIVeJH6lI", // Fallback to second video
