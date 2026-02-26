@@ -4,7 +4,7 @@ Reform is a web application that helps users perform physical therapy exercises 
 
 ## Features
 
-### 🎯 Core Functionality
+###  Core Functionality
 
 - **Real-time Form Analysis**: Uses MediaPipe Vision API to analyze exercise form in real-time through your webcam
 - **Automatic Rep Counting**: Detects and counts exercise repetitions automatically
@@ -20,7 +20,7 @@ Reform is a web application that helps users perform physical therapy exercises 
   - Shoulder Press
   - Calf Raise
 
-### 🎨 User Experience
+### User Experience
 
 - **Live Session Interface**: Real-time camera feed with overlay feedback
 - **Coaching Panel**: Side panel showing metrics, form checks, and progress
